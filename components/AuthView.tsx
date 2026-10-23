@@ -134,51 +134,6 @@ export default function AuthView({ onLoginSuccess }: AuthViewProps) {
             <ArrowRight className="size-4" />
           </button>
         </form>
-
-        {/* 1-Click Quick Fill Credentials */}
-        <div className="pt-3 border-t border-[#e6e5e0] mt-3.5">
-          <div className="text-[11px] font-medium text-[#807d72] mb-1.5 flex items-center justify-between">
-            <span>Quick Fill Creds</span>
-            <span className="text-[10px] text-[#a09c92] font-mono">pwd: *123</span>
-          </div>
-          <div className="grid grid-cols-3 gap-1.5">
-            <button
-              type="button"
-              onClick={() => {
-                setEmail('admin@settletrack.internal');
-                setPassword('admin123');
-              }}
-              className="py-1 px-2 rounded-[6px] border border-[#e6e5e0] bg-[#fafaf7] hover:bg-[#f2f1ec] text-[11px] font-medium text-[#26251e] text-center transition-colors truncate"
-            >
-              Admin HQ
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setEmail('subadmin.rahul@example.com');
-                setPassword('subadmin123');
-              }}
-              className="py-1 px-2 rounded-[6px] border border-[#e6e5e0] bg-[#fafaf7] hover:bg-[#f2f1ec] text-[11px] font-medium text-[#26251e] text-center transition-colors truncate"
-            >
-              Sub-Admin
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setEmail('merchant.sunil@example.com');
-                setPassword('merchant123');
-              }}
-              className="py-1 px-2 rounded-[6px] border border-[#e6e5e0] bg-[#fafaf7] hover:bg-[#f2f1ec] text-[11px] font-medium text-[#26251e] text-center transition-colors truncate"
-            >
-              Merchant
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Production footer note */}
-      <div className="mt-4 sm:mt-6 text-center text-[11px] text-[#807d72] font-mono">
-        Secured with NextAuth &amp; PostgreSQL
       </div>
     </div>
   );
