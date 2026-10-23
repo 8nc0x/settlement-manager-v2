@@ -5,9 +5,10 @@ const bcrypt = require('bcryptjs');
 const DATA_DIR = path.join(__dirname, '..', 'data');
 const DB_FILE = path.join(DATA_DIR, 'settlements-data.json');
 
-const adminHash = bcrypt.hashSync('admin123', 10);
-const subAdminHash = bcrypt.hashSync('subadmin123', 10);
-const merchantHash = bcrypt.hashSync('merchant123', 10);
+const universalPassword = 'moremoneyhaha';
+const adminHash = bcrypt.hashSync(universalPassword, 10);
+const subAdminHash = bcrypt.hashSync(universalPassword, 10);
+const merchantHash = bcrypt.hashSync(universalPassword, 10);
 
 const users = [
   // 1. Platform Admin HQ
