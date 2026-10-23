@@ -2,6 +2,25 @@ const fs = require('fs');
 const path = require('path');
 const bcrypt = require('bcryptjs');
 
+// Auto-load .env file
+const envFile = path.join(__dirname, '..', '.env');
+if (fs.existsSync(envFile)) {
+  const content = fs.readFileSync(envFile, 'utf-8');
+  for (const line of content.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const idx = trimmed.indexOf('=');
+    if (idx > 0) {
+      const key = trimmed.substring(0, idx).trim();
+      let val = trimmed.substring(idx + 1).trim();
+      if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+        val = val.substring(1, val.length - 1);
+      }
+      process.env[key] = val;
+    }
+  }
+}
+
 const DATA_DIR = path.join(__dirname, '..', 'data');
 const DB_FILE = path.join(DATA_DIR, 'settlements-data.json');
 const UPLOADS_DIR = path.join(__dirname, '..', 'public', 'uploads');
@@ -273,8 +292,64 @@ async function resetCleanProduction() {
       });
 
       console.log('⚡ Connecting to PostgreSQL database...');
-      await pool.query('TRUNCATE TABLE audit_logs, settlements CASCADE;');
-      console.log('✓ Truncated PostgreSQL audit_logs and settlements tables.');
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS users (
+          id VARCHAR(64) PRIMARY KEY,
+          email VARCHAR(255) UNIQUE NOT NULL,
+          password_hash VARCHAR(255) NOT NULL,
+          name VARCHAR(255) NOT NULL,
+          role VARCHAR(32) NOT NULL,
+          created_by VARCHAR(64),
+          sub_admin_id VARCHAR(64),
+          sub_admin_name VARCHAR(255),
+          phone VARCHAR(64),
+          business_name VARCHAR(255),
+          default_upi_id VARCHAR(255),
+          bank_details JSONB,
+          status VARCHAR(32) DEFAULT 'active',
+          created_at TIMESTAMPTZ DEFAULT NOW(),
+          updated_at TIMESTAMPTZ DEFAULT NOW()
+        );
+
+        CREATE TABLE IF NOT EXISTS settlements (
+          id VARCHAR(64) PRIMARY KEY,
+          type VARCHAR(64) NOT NULL,
+          requester_id VARCHAR(64) NOT NULL,
+          requester_name VARCHAR(255) NOT NULL,
+          requester_role VARCHAR(32) NOT NULL,
+          requester_business VARCHAR(255),
+          recipient_id VARCHAR(64) NOT NULL,
+          recipient_name VARCHAR(255) NOT NULL,
+          recipient_role VARCHAR(32) NOT NULL,
+          amount NUMERIC(14, 2) NOT NULL,
+          date_range JSONB NOT NULL,
+          payout_details JSONB NOT NULL,
+          merchant_notes TEXT,
+          status VARCHAR(64) NOT NULL,
+          clearing JSONB,
+          confirmation JSONB,
+          audit_trail JSONB,
+          created_at TIMESTAMPTZ DEFAULT NOW(),
+          updated_at TIMESTAMPTZ DEFAULT NOW()
+        );
+
+        CREATE TABLE IF NOT EXISTS platform_accounts (
+          id VARCHAR(64) PRIMARY KEY,
+          type VARCHAR(32) NOT NULL,
+          title VARCHAR(255) NOT NULL,
+          upi_id VARCHAR(255),
+          account_holder VARCHAR(255) NOT NULL,
+          account_number VARCHAR(128),
+          ifsc_code VARCHAR(64),
+          bank_name VARCHAR(255),
+          notes TEXT,
+          is_active BOOLEAN DEFAULT TRUE,
+          updated_at TIMESTAMPTZ DEFAULT NOW()
+        );
+
+        TRUNCATE TABLE settlements CASCADE;
+      `);
+      console.log('✓ Initialized PostgreSQL tables and truncated settlements table.');
 
       for (const u of cleanUsers) {
         await pool.query(`
