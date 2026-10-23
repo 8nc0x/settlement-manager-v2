@@ -7,21 +7,7 @@
 
 set -e
 
-DOMAIN="$1"
-
-if [ -z "$DOMAIN" ]; then
-  echo "=============================================================================="
-  echo "⚠️  Please specify your domain name!"
-  echo ""
-  echo "Usage:"
-  echo "  ./scripts/setup-ssl.sh yourdomain.com"
-  echo "  (or: ./scripts/setup-ssl.sh settle.yourdomain.com)"
-  echo ""
-  echo "Before running, ensure your domain has an 'A' record pointing to this VPS IP:"
-  echo "  IP: 169.58.239.109"
-  echo "=============================================================================="
-  exit 1
-fi
+DOMAIN="${1:-169.58.239.109.sslip.io}"
 
 echo "=============================================================================="
 echo "🔒 SettleTrack SSL Setup for: $DOMAIN"
