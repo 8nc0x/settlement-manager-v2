@@ -13,6 +13,12 @@ dist/
 .env*
 !.env.example
 
+# Runtime Database & Uploads Persistence (never overwrite user data)
+data/*.json
+data/uploads/
+public/uploads/*
+!public/uploads/.gitkeep
+
 # Logs
 *.log
 npm-debug.log*
