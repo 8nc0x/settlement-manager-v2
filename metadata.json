@@ -1,0 +1,6 @@
+{
+  "name": "SettleTrack - Multi-Tier Settlement & UTR Record System",
+  "description": "Multi-tier settlement record and clearing software for Admins, Sub-Admins, and Merchants with UPI/Bank payouts, UTR proof verification, and permanent ledger records.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
