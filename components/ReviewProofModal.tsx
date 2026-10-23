@@ -273,7 +273,7 @@ export default function ReviewProofModal({
                       <span>Open Full Media</span>
                     </a>
                     <a
-                      href={screenshotUrl}
+                      href={screenshotUrl?.includes('?') ? `${screenshotUrl}&download=1` : `${screenshotUrl}?download=1`}
                       download={clr?.screenshotFileName || 'payment_screenshot.png'}
                       className="py-1.5 px-2.5 rounded-[6px] border border-[#e6e5e0] bg-[#fafaf7] hover:bg-[#f2f1ec] text-[11px] font-medium text-[#26251e] text-center flex items-center justify-center gap-1 transition-colors"
                       title="Download image"
@@ -329,7 +329,7 @@ export default function ReviewProofModal({
                       <span>Open File</span>
                     </a>
                     <a
-                      href={documentUrl}
+                      href={documentUrl?.includes('?') ? `${documentUrl}&download=1` : `${documentUrl}?download=1`}
                       download={clr?.documentFileName || 'banking_document'}
                       className="py-1.5 px-2.5 rounded-[6px] border border-[#e6e5e0] bg-[#fafaf7] hover:bg-[#f2f1ec] text-[11px] font-medium text-[#26251e] text-center flex items-center justify-center gap-1 transition-colors"
                       title="Download file"

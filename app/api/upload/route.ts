@@ -8,9 +8,13 @@ export async function POST(req: NextRequest) {
   try {
     const contentType = req.headers.get('content-type') || '';
     const uploadsDir = path.join(process.cwd(), 'public', 'uploads');
+    const persistentUploadsDir = path.join(process.cwd(), 'data', 'uploads');
     
     if (!fs.existsSync(uploadsDir)) {
       fs.mkdirSync(uploadsDir, { recursive: true });
+    }
+    if (!fs.existsSync(persistentUploadsDir)) {
+      fs.mkdirSync(persistentUploadsDir, { recursive: true });
     }
 
     // 1. Handle multipart/form-data upload
@@ -31,9 +35,12 @@ export async function POST(req: NextRequest) {
       const cleanBase = path.basename(originalName, ext).replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 40);
       const uniqueSuffix = `${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
       const savedFileName = `${category}_${cleanBase}_${uniqueSuffix}${ext}`;
+      
       const fullPath = path.join(uploadsDir, savedFileName);
+      const persistentPath = path.join(persistentUploadsDir, savedFileName);
 
       fs.writeFileSync(fullPath, buffer);
+      try { fs.writeFileSync(persistentPath, buffer); } catch (_) {}
 
       const fileSize = file.size > 1024 * 1024 
         ? `${(file.size / (1024 * 1024)).toFixed(1)} MB` 
@@ -42,7 +49,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({
         success: true,
         url: `/uploads/${savedFileName}`,
-        downloadUrl: `/uploads/${savedFileName}`,
+        downloadUrl: `/uploads/${savedFileName}?download=1`,
         viewUrl: `/uploads/${savedFileName}`,
         fileName: originalName,
         savedFileName,
@@ -83,8 +90,10 @@ export async function POST(req: NextRequest) {
       const uniqueSuffix = `${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
       const savedFileName = `${category}_${cleanBase}_${uniqueSuffix}${ext}`;
       const fullPath = path.join(uploadsDir, savedFileName);
+      const persistentPath = path.join(persistentUploadsDir, savedFileName);
 
       fs.writeFileSync(fullPath, buffer);
+      try { fs.writeFileSync(persistentPath, buffer); } catch (_) {}
 
       const fileSize = buffer.length > 1024 * 1024 
         ? `${(buffer.length / (1024 * 1024)).toFixed(1)} MB` 
@@ -93,7 +102,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({
         success: true,
         url: `/uploads/${savedFileName}`,
-        downloadUrl: `/uploads/${savedFileName}`,
+        downloadUrl: `/uploads/${savedFileName}?download=1`,
         viewUrl: `/uploads/${savedFileName}`,
         fileName: originalName,
         savedFileName,
