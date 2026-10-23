@@ -1,79 +1,33 @@
 'use client';
 
 import React from 'react';
-import { Settlement, User, ProofType } from '@/types';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
-} from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
+import { Settlement, User } from '@/types';
+import { Dialog, DialogContent, DialogHeader } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { Badge } from '@/components/ui/badge';
-import { 
-  Upload, 
-  Image as ImageIcon, 
-  FileSpreadsheet, 
-  FileText, 
-  Link as LinkIcon, 
-  Sparkles, 
-  Check, 
-  Copy, 
-  Smartphone, 
-  Building, 
-  AlertCircle, 
-  CheckCircle2, 
-  ExternalLink 
+import {
+  AlertCircle,
+  Upload,
+  FileSpreadsheet,
+  FileText,
+  Image as ImageIcon,
+  CheckCircle2,
+  X,
+  Trash2,
+  FileCheck,
+  Eye,
+  Check,
+  Building,
+  Smartphone
 } from 'lucide-react';
 
-function createVoucherDataUri(utr: string, s: Settlement, senderName: string, senderRole: string): string {
-  const destination = s.payoutDetails.method === 'upi' 
-    ? s.payoutDetails.upiId || 'merchant@upi'
-    : `${s.payoutDetails.bankName || 'Bank'} A/C: ${s.payoutDetails.accountNumber}`;
-
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="600" height="750" viewBox="0 0 600 750" fill="none">
-    <rect width="600" height="750" rx="16" fill="#F8FAFC" stroke="#E2E8F0" stroke-width="2"/>
-    <circle cx="300" cy="85" r="36" fill="#ECFDF5"/>
-    <circle cx="300" cy="85" r="28" fill="#10B981"/>
-    <path d="M292 85L298 91L310 79" stroke="#FFFFFF" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
-    
-    <text x="300" y="145" fill="#0F172A" font-family="system-ui, sans-serif" font-size="20" font-weight="700" text-anchor="middle">Transfer Completed</text>
-    <text x="300" y="168" fill="#64748B" font-family="system-ui, sans-serif" font-size="13" text-anchor="middle">Official Banking Settlement Voucher</text>
-    
-    <text x="300" y="225" fill="#0F172A" font-family="system-ui, sans-serif" font-size="34" font-weight="800" text-anchor="middle">₹${s.amount.toLocaleString('en-IN')}.00</text>
-    
-    <!-- Voucher Container -->
-    <rect x="40" y="265" width="520" height="400" rx="12" fill="#FFFFFF" stroke="#E2E8F0" stroke-width="1"/>
-    
-    <text x="70" y="308" fill="#94A3B8" font-family="system-ui, sans-serif" font-size="11" font-weight="600">BENEFICIARY</text>
-    <text x="70" y="330" fill="#0F172A" font-family="system-ui, sans-serif" font-size="16" font-weight="700">${s.requesterName}</text>
-    <text x="70" y="352" fill="#0284C7" font-family="system-ui, sans-serif" font-size="13">${destination}</text>
-    
-    <line x1="70" y1="375" x2="530" y2="375" stroke="#F1F5F9" stroke-width="1.5" stroke-dasharray="4 4"/>
-    
-    <text x="70" y="405" fill="#94A3B8" font-family="system-ui, sans-serif" font-size="11" font-weight="600">UTR / TRANSACTION REFERENCE NUMBER</text>
-    <text x="70" y="430" fill="#0F172A" font-family="monospace" font-size="18" font-weight="700" letter-spacing="1">${utr}</text>
-    
-    <line x1="70" y1="455" x2="530" y2="455" stroke="#F1F5F9" stroke-width="1.5" stroke-dasharray="4 4"/>
-    
-    <text x="70" y="488" fill="#94A3B8" font-family="system-ui, sans-serif" font-size="11" font-weight="600">SETTLED BY AGENT</text>
-    <text x="70" y="510" fill="#0F172A" font-family="system-ui, sans-serif" font-size="14" font-weight="600">${senderName} (${senderRole.toUpperCase()})</text>
-    
-    <text x="70" y="552" fill="#94A3B8" font-family="system-ui, sans-serif" font-size="11" font-weight="600">SETTLEMENT TIMEFRAME</text>
-    <text x="70" y="574" fill="#0F172A" font-family="system-ui, sans-serif" font-size="13">${s.dateRange.startDate} to ${s.dateRange.endDate}</text>
-    
-    <rect x="70" y="605" width="460" height="28" rx="6" fill="#ECFDF5" stroke="#A7F3D0" stroke-width="1"/>
-    <text x="300" y="623" fill="#047857" font-family="system-ui, sans-serif" font-size="11" font-weight="700" text-anchor="middle">✓ BANK DEBIT VERIFIED &amp; PERMANENTLY LOGGED</text>
-    
-    <text x="300" y="705" fill="#94A3B8" font-family="system-ui, sans-serif" font-size="12" text-anchor="middle">Audit Ledger Electronic Proof</text>
-  </svg>`;
-  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+interface UploadedFileState {
+  url: string;
+  fileName: string;
+  fileSize: string;
+  mimeType?: string;
+  previewUrl?: string;
 }
 
 interface ClearSettlementModalProps {
@@ -89,102 +43,160 @@ export default function ClearSettlementModal({
   settlement,
   onClose,
   currentUser,
-  onSuccess
+  onSuccess,
 }: ClearSettlementModalProps) {
-  const [utrNumber, setUtrNumber] = React.useState<string>(() => {
-    return settlement?.clearing?.utrNumber || `42${Math.floor(1000000000 + Math.random() * 9000000000)}`;
-  });
+  const [utrNumber, setUtrNumber] = React.useState<string>('');
+  
+  // Dual file upload states (Option 1: Payment Screenshot, Option 2: Statement / Document)
+  const [screenshotData, setScreenshotData] = React.useState<UploadedFileState | null>(null);
+  const [documentData, setDocumentData] = React.useState<UploadedFileState | null>(null);
+  const [isUploadingScreenshot, setIsUploadingScreenshot] = React.useState<boolean>(false);
+  const [isUploadingDocument, setIsUploadingDocument] = React.useState<boolean>(false);
+  const [screenshotError, setScreenshotError] = React.useState<string | null>(null);
+  const [documentError, setDocumentError] = React.useState<string | null>(null);
 
-  const [activeProofTab, setActiveProofTab] = React.useState<ProofType>('image');
-  const [proofUrl, setProofUrl] = React.useState<string>(() => {
-    if (!settlement) return '';
-    if (settlement.clearing?.proofUrl) return settlement.clearing.proofUrl;
-    const initialUtr = settlement.clearing?.utrNumber || `42${Math.floor(1000000000 + Math.random() * 9000000000)}`;
-    return createVoucherDataUri(initialUtr, settlement, currentUser.name, currentUser.role);
-  });
-
-  const [proofFileName, setProofFileName] = React.useState<string>('');
-  const [proofFileSize, setProofFileSize] = React.useState<string>('');
-  const [proofMimeType, setProofMimeType] = React.useState<string>('');
-  const [proofLink, setProofLink] = React.useState<string>('');
-  const [remarks, setRemarks] = React.useState<string>('Transferred via NetBanking IMPS. Proof attached.');
-  const [copiedField, setCopiedField] = React.useState<string | null>(null);
-
+  const [remarks, setRemarks] = React.useState<string>('Paid via corporate banking net banking IMPS. UTR and proof stored.');
   const [isSubmitting, setIsSubmitting] = React.useState<boolean>(false);
   const [errorMsg, setErrorMsg] = React.useState<string | null>(null);
 
-  if (!isOpen || !settlement) return null;
+  const [duplicateWarning, setDuplicateWarning] = React.useState<string | null>(null);
+  const [isValidatingUtr, setIsValidatingUtr] = React.useState<boolean>(false);
 
-  const handleCopy = (text: string, key: string) => {
-    navigator.clipboard.writeText(text);
-    setCopiedField(key);
-    setTimeout(() => setCopiedField(null), 2000);
-  };
+  const screenshotInputRef = React.useRef<HTMLInputElement>(null);
+  const documentInputRef = React.useRef<HTMLInputElement>(null);
 
-  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  React.useEffect(() => {
+    if (isOpen) {
+      setUtrNumber('');
+      setScreenshotData(null);
+      setDocumentData(null);
+      setScreenshotError(null);
+      setDocumentError(null);
+      setErrorMsg(null);
+      setDuplicateWarning(null);
+      setRemarks('Paid via corporate banking IMPS. UTR and proof stored.');
+    }
+  }, [isOpen]);
 
-    if (!file.type.startsWith('image/')) {
-      setErrorMsg('Please upload an image file (PNG, JPG, WebP)');
+  // Real-time duplicate UTR check
+  React.useEffect(() => {
+    const clean = utrNumber.trim();
+    if (clean.length < 6) {
+      setDuplicateWarning(null);
       return;
     }
 
-    const reader = new FileReader();
-    reader.onload = () => {
-      setProofUrl(reader.result as string);
-      setProofFileName(file.name);
-      setProofFileSize(`${(file.size / 1024).toFixed(1)} KB`);
-      setProofMimeType(file.type);
-      setActiveProofTab('image');
-    };
-    reader.readAsDataURL(file);
-  };
+    const timer = setTimeout(async () => {
+      setIsValidatingUtr(true);
+      try {
+        const res = await fetch(`/api/settlements?checkUtr=${encodeURIComponent(clean)}&excludeId=${settlement?.id}`);
+        const data = await res.json();
+        if (data.success && !data.isAvailable) {
+          setDuplicateWarning(`Duplicate UTR! Reference ${clean} is already logged on settlement #${data.existingSettlementId}`);
+        } else {
+          setDuplicateWarning(null);
+        }
+      } catch {
+        // silent
+      } finally {
+        setIsValidatingUtr(false);
+      }
+    }, 300);
 
-  const handleDocumentUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    return () => clearTimeout(timer);
+  }, [utrNumber, settlement?.id]);
+
+  if (!isOpen || !settlement) return null;
+
+  const destination = settlement.payoutDetails.method === 'upi'
+    ? settlement.payoutDetails.upiId
+    : `${settlement.payoutDetails.bankName || 'Bank'} A/C ${settlement.payoutDetails.accountNumber} (IFSC: ${settlement.payoutDetails.ifscCode})`;
+
+  // Upload Option 1: Payment Screenshot (Images)
+  const handleScreenshotChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const fileNameLower = file.name.toLowerCase();
-    const isSpreadsheet = fileNameLower.endsWith('.xlsx') || fileNameLower.endsWith('.xls') || fileNameLower.endsWith('.csv');
-    const isPdf = fileNameLower.endsWith('.pdf');
+    setIsUploadingScreenshot(true);
+    setScreenshotError(null);
 
-    const reader = new FileReader();
-    reader.onload = () => {
-      setProofUrl(reader.result as string);
-      setProofFileName(file.name);
-      setProofFileSize(`${(file.size / 1024).toFixed(1)} KB`);
-      setProofMimeType(file.type || (isSpreadsheet ? 'application/vnd.ms-excel' : 'application/pdf'));
-      setActiveProofTab(isSpreadsheet ? 'file_excel_csv' : isPdf ? 'file_pdf' : 'file_excel_csv');
-    };
-    reader.readAsDataURL(file);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('category', 'screenshot');
+
+      const res = await fetch('/api/upload', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Failed to upload screenshot to server');
+      }
+
+      setScreenshotData({
+        url: data.url,
+        fileName: data.fileName,
+        fileSize: data.fileSize,
+        mimeType: data.mimeType,
+        previewUrl: data.url,
+      });
+    } catch (err: any) {
+      setScreenshotError(err.message || 'Error uploading screenshot');
+    } finally {
+      setIsUploadingScreenshot(false);
+    }
   };
 
-  const handleGenerateVoucher = () => {
-    const uri = createVoucherDataUri(utrNumber, settlement, currentUser.name, currentUser.role);
-    setProofUrl(uri);
-    setProofFileName(`Voucher_${settlement.id}_${utrNumber.slice(-4)}.svg`);
-    setProofFileSize('12 KB');
-    setProofMimeType('image/svg+xml');
-    setActiveProofTab('voucher');
+  // Upload Option 2: Banking Document / File (PDF, Excel, CSV)
+  const handleDocumentChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsUploadingDocument(true);
+    setDocumentError(null);
+
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('category', 'document');
+
+      const res = await fetch('/api/upload', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Failed to upload document file to server');
+      }
+
+      setDocumentData({
+        url: data.url,
+        fileName: data.fileName,
+        fileSize: data.fileSize,
+        mimeType: data.mimeType,
+      });
+    } catch (err: any) {
+      setDocumentError(err.message || 'Error uploading document file');
+    } finally {
+      setIsUploadingDocument(false);
+    }
   };
 
-  const handleClear = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg(null);
 
-    if (!utrNumber || utrNumber.trim().length < 6) {
-      setErrorMsg('Please provide a valid UTR / Bank Reference number (minimum 6 digits/characters)');
+    const cleanUtr = utrNumber.trim();
+    if (!cleanUtr || cleanUtr.length < 6) {
+      setErrorMsg('Mandatory: Please enter a valid 12-digit UPI UTR or Bank Reference Number (at least 6 characters).');
       return;
     }
 
-    if (activeProofTab === 'web_link' && !proofLink.trim()) {
-      setErrorMsg('Please enter a valid verification or portal link');
-      return;
-    }
-
-    if (activeProofTab !== 'web_link' && !proofUrl) {
-      setErrorMsg('Please attach or generate a payment proof (Photo, Excel/CSV, PDF, or Voucher)');
+    if (duplicateWarning) {
+      setErrorMsg(duplicateWarning);
       return;
     }
 
@@ -196,15 +208,18 @@ export default function ClearSettlementModal({
         body: JSON.stringify({
           action: 'clear',
           actorId: currentUser.id,
-          utrNumber: utrNumber.trim(),
-          proofType: activeProofTab,
-          proofUrl: activeProofTab === 'web_link' ? proofLink.trim() : proofUrl,
-          proofFileName: proofFileName || undefined,
-          proofFileSize: proofFileSize || undefined,
-          proofMimeType: proofMimeType || undefined,
-          proofLink: activeProofTab === 'web_link' ? proofLink.trim() : undefined,
-          remarks
-        })
+          utrNumber: cleanUtr,
+          proofType: screenshotData ? 'image' : documentData ? 'file_pdf' : 'voucher',
+          proofUrl: screenshotData?.url || documentData?.url,
+          screenshotUrl: screenshotData?.url,
+          screenshotFileName: screenshotData?.fileName,
+          screenshotFileSize: screenshotData?.fileSize,
+          documentUrl: documentData?.url,
+          documentFileName: documentData?.fileName,
+          documentFileSize: documentData?.fileSize,
+          documentMimeType: documentData?.mimeType,
+          remarks: remarks.trim(),
+        }),
       });
 
       const data = await res.json();
@@ -223,268 +238,319 @@ export default function ClearSettlementModal({
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => { if (!open) onClose(); }}>
-      <DialogContent className="max-w-lg p-5 sm:p-6 max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <div className="flex items-center gap-2">
-            <DialogTitle className="text-lg font-bold">Clear Settlement #{settlement.id}</DialogTitle>
-            <Badge variant="outline" className="text-emerald-700 bg-emerald-50 border-emerald-200">
-              ₹{settlement.amount.toLocaleString('en-IN')}
-            </Badge>
+      <DialogContent className="max-w-2xl bg-[#ffffff] border border-[#e6e5e0] rounded-[12px] p-5 sm:p-6 text-[#26251e] shadow-sm max-h-[92vh] overflow-y-auto">
+        <DialogHeader className="flex items-center justify-between pb-3 border-b border-[#efeee8]">
+          <div>
+            <div className="font-display text-[20px] font-medium tracking-tight text-[#26251e]">
+              Clear Settlement &amp; Store Proof
+            </div>
+            <div className="text-[12px] text-[#807d72]">
+              Issue bank clearance for {settlement.requesterName} · Ref #{settlement.id}
+            </div>
           </div>
-          <DialogDescription className="text-xs">
-            Submit payment proof (Photo, XLSX/CSV document, or Link) &amp; UTR to mark cleared.
-          </DialogDescription>
+          <button
+            type="button"
+            onClick={onClose}
+            className="w-7 h-7 rounded-[6px] border border-[#e6e5e0] flex items-center justify-center text-[#807d72] hover:text-[#26251e] hover:bg-[#fafaf7]"
+          >
+            <X className="size-4" />
+          </button>
         </DialogHeader>
 
+        {/* Amount & Destination Banner */}
+        <div className="my-3.5 p-3.5 rounded-[8px] border border-[#e6e5e0] bg-[#fafaf7] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <div className="text-[11px] font-mono uppercase text-[#807d72]">Disbursed Payout</div>
+            <div className="font-mono text-[22px] font-medium text-[#26251e]">
+              ₹{Number(settlement.amount).toLocaleString('en-IN')}.00
+            </div>
+          </div>
+          <div className="sm:text-right">
+            <div className="text-[11px] font-mono uppercase text-[#807d72]">Beneficiary Destination</div>
+            <div className="font-mono text-[12px] text-[#26251e] font-medium truncate max-w-sm">
+              {destination}
+            </div>
+          </div>
+        </div>
+
         {errorMsg && (
-          <div className="p-3 rounded-lg bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 shrink-0" />
+          <div className="mb-3.5 p-3 rounded-[8px] border border-[#cf2d56]/20 bg-[#fae8ed] text-[12px] text-[#cf2d56] flex items-center gap-2">
+            <AlertCircle className="size-4 shrink-0" />
             <span>{errorMsg}</span>
           </div>
         )}
 
-        {/* Payout Destination Details Box */}
-        <div className="p-3 bg-muted/50 rounded-xl border border-border/80 space-y-2 text-xs">
-          <div className="flex items-center justify-between">
-            <span className="text-muted-foreground font-medium">Payee Destination:</span>
-            <span className="font-semibold">{settlement.requesterName}</span>
-          </div>
-
-          {settlement.payoutDetails.method === 'upi' ? (
-            <div className="flex items-center justify-between bg-card p-2 rounded-lg border border-border/60">
-              <div className="flex items-center gap-2 font-mono font-medium truncate">
-                <Smartphone className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                <span className="truncate">{settlement.payoutDetails.upiId}</span>
-              </div>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-6 text-[11px] gap-1 px-2"
-                onClick={() => handleCopy(settlement.payoutDetails.upiId || '', 'upi')}
-              >
-                {copiedField === 'upi' ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
-                <span>{copiedField === 'upi' ? 'Copied' : 'Copy UPI'}</span>
-              </Button>
-            </div>
-          ) : (
-            <div className="bg-card p-2.5 rounded-lg border border-border/60 space-y-1">
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Bank:</span>
-                <span className="font-semibold">{settlement.payoutDetails.bankName}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Account:</span>
-                <span className="font-mono font-bold">{settlement.payoutDetails.accountNumber}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">IFSC:</span>
-                <span className="font-mono">{settlement.payoutDetails.ifscCode}</span>
-              </div>
-              <div className="pt-1 flex justify-end">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-6 text-[11px] gap-1 px-2"
-                  onClick={() => handleCopy(`${settlement.payoutDetails.accountNumber} IFSC: ${settlement.payoutDetails.ifscCode}`, 'bank')}
-                >
-                  {copiedField === 'bank' ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
-                  <span>{copiedField === 'bank' ? 'Copied' : 'Copy Bank Details'}</span>
-                </Button>
-              </div>
-            </div>
-          )}
-        </div>
-
-        <form onSubmit={handleClear} className="space-y-4">
-          {/* UTR Input */}
-          <div className="space-y-1.5">
+        <form onSubmit={handleSubmit} className="space-y-4">
+          {/* 1. Mandatory UTR Input */}
+          <div className="space-y-1.5 p-3.5 rounded-[8px] border border-[#e6e5e0] bg-[#ffffff]">
             <div className="flex items-center justify-between">
-              <Label htmlFor="utrInput" className="text-xs font-semibold">
-                Bank UTR / Transaction Reference Number *
+              <Label htmlFor="utrInput" className="text-[12px] font-semibold text-[#26251e] flex items-center gap-1.5">
+                <span>12-Digit UPI UTR or Bank Reference Number</span>
+                <span className="text-[#f54e00] font-bold">* MANDATORY</span>
               </Label>
-              <button
-                type="button"
-                onClick={() => {
-                  const newUtr = `42${Math.floor(1000000000 + Math.random() * 9000000000)}`;
-                  setUtrNumber(newUtr);
-                }}
-                className="text-[11px] text-emerald-600 hover:underline flex items-center gap-1 font-medium"
-              >
-                <Sparkles className="w-3 h-3" />
-                Randomize UTR
-              </button>
+              <div className="flex items-center gap-1.5 font-mono text-[11px]">
+                {isValidatingUtr ? (
+                  <span className="text-[#807d72] animate-pulse">Checking...</span>
+                ) : duplicateWarning ? (
+                  <span className="text-[#cf2d56] font-semibold flex items-center gap-1">
+                    <AlertCircle className="size-3" /> Duplicate
+                  </span>
+                ) : utrNumber.trim().length === 12 ? (
+                  <span className="text-[#1f8a65] font-semibold flex items-center gap-1">
+                    <CheckCircle2 className="size-3" /> 12/12 Valid
+                  </span>
+                ) : (
+                  <span className="text-[#807d72]">{utrNumber.trim().length}/12</span>
+                )}
+              </div>
             </div>
+
             <Input
               id="utrInput"
+              type="text"
               required
               value={utrNumber}
-              onChange={(e) => setUtrNumber(e.target.value)}
-              placeholder="e.g. 429188402914 or CMS91823091"
-              className="font-mono font-bold tracking-wider text-xs"
+              onChange={(e) => setUtrNumber(e.target.value.toUpperCase())}
+              placeholder="e.g. 603912884912 or CMS982104928190"
+              className={`font-mono text-[14px] tracking-wider h-10 rounded-[8px] bg-[#ffffff] focus-visible:ring-1 ${
+                duplicateWarning ? 'border-[#cf2d56] focus-visible:ring-[#cf2d56]' : 'border-[#e6e5e0] focus-visible:ring-[#f54e00]'
+              }`}
             />
+
+            {duplicateWarning ? (
+              <span className="text-[11px] text-[#cf2d56] font-medium block">
+                {duplicateWarning}
+              </span>
+            ) : (
+              <span className="text-[11px] text-[#807d72] block">
+                Required for banking reconciliation. The opposite party will verify this reference on their bank statement.
+              </span>
+            )}
           </div>
 
-          {/* Proof Uploads: Tabs for Photo, File (XLSX/CSV/PDF), Link, and Auto Voucher */}
-          <div className="space-y-2">
-            <Label className="text-xs font-semibold block">
-              Payment Proof Attachment (Photo, XLSX/CSV, or Link) *
-            </Label>
+          {/* 2. Dual File Upload Options */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="text-[12px] font-semibold text-[#26251e]">
+                Proof Attachments (Stored on Server)
+              </div>
+              <span className="text-[11px] text-[#807d72]">
+                Upload 1 or both options
+              </span>
+            </div>
 
-            <Tabs value={activeProofTab} onValueChange={(val) => setActiveProofTab(val as ProofType)} className="w-full">
-              <TabsList className="grid grid-cols-4 w-full h-8 p-0.5 bg-muted">
-                <TabsTrigger value="image" className="text-[11px] px-1 gap-1">
-                  <ImageIcon className="w-3 h-3" />
-                  <span>Photo</span>
-                </TabsTrigger>
-                <TabsTrigger value="file_excel_csv" className="text-[11px] px-1 gap-1">
-                  <FileSpreadsheet className="w-3 h-3" />
-                  <span>XLSX/CSV</span>
-                </TabsTrigger>
-                <TabsTrigger value="web_link" className="text-[11px] px-1 gap-1">
-                  <LinkIcon className="w-3 h-3" />
-                  <span>Link</span>
-                </TabsTrigger>
-                <TabsTrigger value="voucher" className="text-[11px] px-1 gap-1">
-                  <Sparkles className="w-3 h-3" />
-                  <span>Voucher</span>
-                </TabsTrigger>
-              </TabsList>
-
-              {/* Tab 1: Photo Upload */}
-              <TabsContent value="image" className="mt-2.5 space-y-2">
-                <label className="border-2 border-dashed border-border rounded-xl p-4 flex flex-col items-center justify-center cursor-pointer hover:border-emerald-500 bg-muted/20 transition-colors">
-                  <Upload className="w-6 h-6 text-muted-foreground mb-1" />
-                  <span className="text-xs font-medium">Click to select Screenshot Photo</span>
-                  <span className="text-[10px] text-muted-foreground">PNG, JPG, or WEBP up to 10MB</span>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={handlePhotoUpload}
-                    className="hidden"
-                  />
-                </label>
-              </TabsContent>
-
-              {/* Tab 2: XLSX / CSV / PDF Document Upload */}
-              <TabsContent value="file_excel_csv" className="mt-2.5 space-y-2">
-                <label className="border-2 border-dashed border-border rounded-xl p-4 flex flex-col items-center justify-center cursor-pointer hover:border-emerald-500 bg-muted/20 transition-colors">
-                  <FileSpreadsheet className="w-6 h-6 text-emerald-600 mb-1" />
-                  <span className="text-xs font-medium">Upload Bank Sheet or Statement (.xlsx, .csv, .pdf)</span>
-                  <span className="text-[10px] text-muted-foreground">Excel workbook, CSV transaction log, or PDF advice</span>
-                  <input
-                    type="file"
-                    accept=".xlsx,.xls,.csv,.pdf,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv,application/pdf"
-                    onChange={handleDocumentUpload}
-                    className="hidden"
-                  />
-                </label>
-              </TabsContent>
-
-              {/* Tab 3: Web or Cloud Link */}
-              <TabsContent value="web_link" className="mt-2.5 space-y-2">
-                <div className="space-y-1">
-                  <Label htmlFor="proofLinkInput" className="text-[11px] text-muted-foreground">
-                    Bank Portal Reference URL or Cloud Receipt Link
-                  </Label>
-                  <Input
-                    id="proofLinkInput"
-                    type="url"
-                    value={proofLink}
-                    onChange={(e) => setProofLink(e.target.value)}
-                    placeholder="https://banking.portal.com/receipt/TXN-894102 or Drive Link"
-                    className="text-xs font-mono"
-                  />
-                </div>
-              </TabsContent>
-
-              {/* Tab 4: Auto Generated Bank Voucher */}
-              <TabsContent value="voucher" className="mt-2.5 space-y-2">
-                <div className="p-3 bg-emerald-50/60 rounded-xl border border-emerald-200 flex items-center justify-between">
-                  <div className="space-y-0.5">
-                    <span className="text-xs font-semibold text-emerald-900 block">Instant Banking Voucher</span>
-                    <span className="text-[11px] text-emerald-700">Auto-generated receipt with UTR #{utrNumber}</span>
-                  </div>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    onClick={handleGenerateVoucher}
-                    className="text-xs bg-white text-emerald-800 border-emerald-300"
-                  >
-                    Regenerate
-                  </Button>
-                </div>
-              </TabsContent>
-            </Tabs>
-
-            {/* Proof Attachment Badge / Preview */}
-            {(proofUrl || proofLink) && (
-              <div className="p-2.5 rounded-lg border border-border bg-muted/30 flex items-center justify-between text-xs">
-                <div className="flex items-center gap-2 truncate">
-                  {activeProofTab === 'file_excel_csv' ? (
-                    <FileSpreadsheet className="w-4 h-4 text-emerald-600 shrink-0" />
-                  ) : activeProofTab === 'web_link' ? (
-                    <LinkIcon className="w-4 h-4 text-blue-600 shrink-0" />
-                  ) : activeProofTab === 'file_pdf' ? (
-                    <FileText className="w-4 h-4 text-rose-600 shrink-0" />
-                  ) : (
-                    <ImageIcon className="w-4 h-4 text-slate-600 shrink-0" />
-                  )}
-                  <div className="truncate">
-                    <span className="font-semibold block truncate">
-                      {proofFileName || (activeProofTab === 'web_link' ? proofLink : 'Attached Payment Voucher')}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {/* Option 1: Payment Screenshot */}
+              <div className="p-3.5 rounded-[8px] border border-[#e6e5e0] bg-[#fafaf7] flex flex-col justify-between">
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-[12px] font-semibold text-[#26251e] flex items-center gap-1.5">
+                      <ImageIcon className="size-4 text-[#f54e00]" />
+                      <span>Option 1: Payment Screenshot</span>
                     </span>
-                    {proofFileSize && <span className="text-[10px] text-muted-foreground">{proofFileSize}</span>}
+                    {screenshotData && (
+                      <span className="text-[10px] font-mono text-[#1f8a65] bg-[#1f8a65]/10 px-1.5 py-0.5 rounded-[4px] flex items-center gap-1">
+                        <Check className="size-2.5" /> Saved
+                      </span>
+                    )}
                   </div>
+                  <p className="text-[11px] text-[#807d72] mb-3">
+                    UPI / NetBanking payment success screen (PNG, JPG, WEBP).
+                  </p>
                 </div>
 
-                <div className="flex items-center gap-2 shrink-0">
-                  <Badge variant="outline" className="text-[10px] text-emerald-700 bg-emerald-50 border-emerald-200">
-                    Ready
-                  </Badge>
-                  {proofUrl && activeProofTab !== 'web_link' && (
-                    <a
-                      href={proofUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      download={proofFileName || 'settlement_proof'}
-                      className="text-[11px] text-muted-foreground hover:text-foreground flex items-center gap-0.5"
+                <input
+                  ref={screenshotInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handleScreenshotChange}
+                />
+
+                {screenshotData ? (
+                  <div className="p-2.5 rounded-[6px] border border-[#e6e5e0] bg-[#ffffff] flex items-center gap-2.5">
+                    <div className="w-10 h-10 rounded-[4px] overflow-hidden border border-[#e6e5e0] shrink-0 bg-[#fafaf7]">
+                      <img
+                        src={screenshotData.previewUrl || screenshotData.url}
+                        alt="Screenshot Preview"
+                        className="w-full h-full object-cover"
+                      />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-[11px] font-mono font-medium text-[#26251e] truncate">
+                        {screenshotData.fileName}
+                      </div>
+                      <div className="text-[10px] text-[#807d72] font-mono">
+                        {screenshotData.fileSize} · On Server
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setScreenshotData(null);
+                        if (screenshotInputRef.current) screenshotInputRef.current.value = '';
+                      }}
+                      className="p-1 text-[#807d72] hover:text-[#cf2d56]"
+                      title="Remove screenshot"
                     >
-                      <ExternalLink className="w-3 h-3" />
-                    </a>
-                  )}
+                      <Trash2 className="size-3.5" />
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    disabled={isUploadingScreenshot}
+                    onClick={() => screenshotInputRef.current?.click()}
+                    className="w-full py-3 px-3 rounded-[6px] border border-dashed border-[#cfcdc4] bg-[#ffffff] hover:border-[#f54e00] hover:bg-[#fafaf7] text-center transition-colors flex flex-col items-center gap-1"
+                  >
+                    <Upload className="size-4 text-[#807d72]" />
+                    <span className="text-[11px] font-medium text-[#f54e00]">
+                      {isUploadingScreenshot ? 'Uploading to server...' : 'Upload Payment Screenshot'}
+                    </span>
+                    <span className="text-[10px] text-[#a09c92]">Max 10MB</span>
+                  </button>
+                )}
+
+                {screenshotError && (
+                  <span className="text-[10px] text-[#cf2d56] mt-1.5 block">
+                    {screenshotError}
+                  </span>
+                )}
+              </div>
+
+              {/* Option 2: Document / Statement File */}
+              <div className="p-3.5 rounded-[8px] border border-[#e6e5e0] bg-[#fafaf7] flex flex-col justify-between">
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-[12px] font-semibold text-[#26251e] flex items-center gap-1.5">
+                      <FileText className="size-4 text-[#807d72]" />
+                      <span>Option 2: Document / File</span>
+                    </span>
+                    {documentData && (
+                      <span className="text-[10px] font-mono text-[#1f8a65] bg-[#1f8a65]/10 px-1.5 py-0.5 rounded-[4px] flex items-center gap-1">
+                        <Check className="size-2.5" /> Saved
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-[#807d72] mb-3">
+                    Bank statement, CMS sheet, or advice (PDF, XLSX, CSV).
+                  </p>
                 </div>
+
+                <input
+                  ref={documentInputRef}
+                  type="file"
+                  accept=".pdf,.xlsx,.xls,.csv,.txt"
+                  className="hidden"
+                  onChange={handleDocumentChange}
+                />
+
+                {documentData ? (
+                  <div className="p-2.5 rounded-[6px] border border-[#e6e5e0] bg-[#ffffff] flex items-center gap-2.5">
+                    <div className="w-10 h-10 rounded-[4px] bg-[#fafaf7] border border-[#e6e5e0] flex items-center justify-center shrink-0">
+                      {documentData.fileName.endsWith('.csv') || documentData.fileName.endsWith('.xlsx') ? (
+                        <FileSpreadsheet className="size-5 text-[#1f8a65]" />
+                      ) : (
+                        <FileText className="size-5 text-[#cf2d56]" />
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-[11px] font-mono font-medium text-[#26251e] truncate">
+                        {documentData.fileName}
+                      </div>
+                      <div className="text-[10px] text-[#807d72] font-mono">
+                        {documentData.fileSize} · On Server
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDocumentData(null);
+                        if (documentInputRef.current) documentInputRef.current.value = '';
+                      }}
+                      className="p-1 text-[#807d72] hover:text-[#cf2d56]"
+                      title="Remove file"
+                    >
+                      <Trash2 className="size-3.5" />
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    disabled={isUploadingDocument}
+                    onClick={() => documentInputRef.current?.click()}
+                    className="w-full py-3 px-3 rounded-[6px] border border-dashed border-[#cfcdc4] bg-[#ffffff] hover:border-[#f54e00] hover:bg-[#fafaf7] text-center transition-colors flex flex-col items-center gap-1"
+                  >
+                    <Upload className="size-4 text-[#807d72]" />
+                    <span className="text-[11px] font-medium text-[#f54e00]">
+                      {isUploadingDocument ? 'Uploading to server...' : 'Upload Banking Document'}
+                    </span>
+                    <span className="text-[10px] text-[#a09c92]">PDF, Excel, CSV up to 15MB</span>
+                  </button>
+                )}
+
+                {documentError && (
+                  <span className="text-[10px] text-[#cf2d56] mt-1.5 block">
+                    {documentError}
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Helper fallback badge */}
+            {!screenshotData && !documentData && (
+              <div className="p-2.5 rounded-[6px] border border-[#e6e5e0] bg-[#fafaf7] text-[11px] text-[#807d72] flex items-center gap-2">
+                <FileCheck className="size-4 text-[#1f8a65] shrink-0" />
+                <span>
+                  Tip: If no custom file is attached, an official SVG banking voucher will automatically be generated using your UTR.
+                </span>
               </div>
             )}
           </div>
 
-          {/* Remarks */}
-          <div className="space-y-1">
-            <Label htmlFor="remarksInput" className="text-xs font-semibold">
-              Clearing Remarks (Optional)
+          {/* 3. Remarks */}
+          <div className="space-y-1.5">
+            <Label htmlFor="remarksInput" className="text-[12px] font-semibold text-[#26251e] block">
+              Clearing Remarks &amp; Audit Note
             </Label>
-            <Input
+            <Textarea
               id="remarksInput"
+              rows={2}
               value={remarks}
               onChange={(e) => setRemarks(e.target.value)}
-              placeholder="e.g. Paid from HDFC NetBanking IMPS"
-              className="text-xs"
+              placeholder="e.g. Cleared via corporate netbanking batch..."
+              className="text-[12px] rounded-[8px] border-[#e6e5e0] bg-[#ffffff]"
             />
           </div>
 
-          <DialogFooter className="pt-2 gap-2">
-            <Button type="button" variant="outline" size="sm" onClick={onClose} disabled={isSubmitting}>
-              Cancel
-            </Button>
-            <Button
-              type="submit"
-              size="sm"
+          {/* Submit Action */}
+          <div className="pt-3 border-t border-[#efeee8] flex items-center justify-end gap-2.5">
+            <button
+              type="button"
+              onClick={onClose}
               disabled={isSubmitting}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold"
+              className="btn-cursor-secondary text-[13px] h-9 px-4"
             >
-              {isSubmitting ? 'Recording Clearance...' : 'Submit Proof & Mark Cleared'}
-            </Button>
-          </DialogFooter>
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={isSubmitting || !!duplicateWarning}
+              className="btn-cursor-primary text-[13px] h-9 px-5 flex items-center gap-1.5"
+            >
+              {isSubmitting ? (
+                <>
+                  <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  <span>Clearing Settlement...</span>
+                </>
+              ) : (
+                <>
+                  <CheckCircle2 className="size-4" />
+                  <span>Clear &amp; Commit to Ledger</span>
+                </>
+              )}
+            </button>
+          </div>
         </form>
       </DialogContent>
     </Dialog>

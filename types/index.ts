@@ -10,7 +10,8 @@ export interface BankAccountDetails {
 export interface User {
   id: string;
   email: string;
-  password: string; // Plaintext or hashed; remembered without forget-password flow
+  password?: string;
+  passwordHash?: string;
   name: string;
   role: Role;
   createdBy?: string; // Sub-admin or admin who created this user
@@ -25,16 +26,17 @@ export interface User {
   updatedAt: string;
 }
 
-export type SettlementStatus = 
+export type SettlementStatus =
   | 'pending'                  // Requested by merchant/subadmin, waiting for payer to clear
   | 'paid_pending_confirmation' // Cleared by subadmin/admin with proof & UTR, waiting for requester to verify
   | 'completed'                // Verified and permanently closed by requester
   | 'disputed'                 // Requester flagged missing funds or incorrect UTR
   | 'rejected';                // Payer rejected request with reason
 
-export type SettlementType = 
-  | 'merchant_to_subadmin' 
-  | 'subadmin_to_admin';
+export type SettlementType =
+  | 'merchant_to_subadmin'
+  | 'subadmin_to_admin'
+  | 'merchant_to_admin';
 
 export interface SettlementDateRange {
   startDate: string; // YYYY-MM-DD
@@ -67,6 +69,15 @@ export interface SettlementClearingInfo {
   proofMimeType?: string;
   proofLink?: string; // Cloud or banking portal reference link
   clearingRemarks?: string;
+
+  // Dual file uploads: Payment Screenshot & Banking Document File
+  screenshotUrl?: string;
+  screenshotFileName?: string;
+  screenshotFileSize?: string;
+  documentUrl?: string;
+  documentFileName?: string;
+  documentFileSize?: string;
+  documentMimeType?: string;
 }
 
 export interface SettlementConfirmationInfo {
@@ -96,21 +107,21 @@ export interface Settlement {
   requesterName: string;
   requesterRole: Role;
   requesterBusiness?: string;
-  
+
   recipientId: string;
   recipientName: string;
   recipientRole: Role;
-  
+
   amount: number;
   dateRange: SettlementDateRange;
   payoutDetails: SettlementPayoutDetails;
   merchantNotes?: string;
-  
+
   status: SettlementStatus;
   clearing?: SettlementClearingInfo;
   confirmation?: SettlementConfirmationInfo;
   auditTrail: SettlementAuditLog[];
-  
+
   createdAt: string;
   updatedAt: string;
 }

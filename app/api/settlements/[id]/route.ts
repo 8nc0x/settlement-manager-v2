@@ -18,19 +18,26 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   try {
     const { id } = await params;
     const body = await req.json();
-    const { 
-      action, 
-      actorId, 
-      utrNumber, 
-      proofUrl, 
-      proofType, 
-      proofFileName, 
-      proofFileSize, 
-      proofMimeType, 
-      proofLink, 
-      remarks, 
-      notes, 
-      reason 
+    const {
+      action,
+      actorId,
+      utrNumber,
+      proofUrl,
+      proofType,
+      proofFileName,
+      proofFileSize,
+      proofMimeType,
+      proofLink,
+      remarks,
+      notes,
+      reason,
+      screenshotUrl,
+      screenshotFileName,
+      screenshotFileSize,
+      documentUrl,
+      documentFileName,
+      documentFileSize,
+      documentMimeType
     } = body;
 
     if (!actorId) {
@@ -41,21 +48,28 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       if (!utrNumber || !utrNumber.trim()) {
         return NextResponse.json({ success: false, error: 'UTR or Transaction reference number is required' }, { status: 400 });
       }
-      if (!proofUrl && !proofLink) {
-        return NextResponse.json({ success: false, error: 'Payment proof (photo, file, or verification link) is required to clear settlement' }, { status: 400 });
+      if (!proofUrl && !proofLink && !screenshotUrl && !documentUrl) {
+        return NextResponse.json({ success: false, error: 'Payment proof (screenshot, document file, or verification link) is required to clear settlement' }, { status: 400 });
       }
 
       const updated = clearSettlement({
         settlementId: id,
         actorId,
         utrNumber,
-        proofUrl: proofUrl || proofLink,
+        proofUrl: proofUrl || screenshotUrl || documentUrl || proofLink,
         proofType,
         proofFileName,
         proofFileSize,
         proofMimeType,
         proofLink,
-        remarks
+        remarks,
+        screenshotUrl,
+        screenshotFileName,
+        screenshotFileSize,
+        documentUrl,
+        documentFileName,
+        documentFileSize,
+        documentMimeType
       });
       return NextResponse.json({ success: true, settlement: updated });
     }

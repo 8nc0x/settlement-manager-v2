@@ -2,29 +2,22 @@
 
 import React from 'react';
 import { Settlement, User } from '@/types';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
-} from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
+import { Dialog, DialogContent, DialogHeader } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
-import { 
-  CheckCircle2, 
-  AlertTriangle, 
-  Copy, 
-  Check, 
-  Download, 
-  ExternalLink, 
-  FileSpreadsheet, 
-  FileText, 
-  Link as LinkIcon, 
+import {
+  CheckCircle2,
+  AlertTriangle,
+  Copy,
+  Check,
+  Download,
+  ExternalLink,
+  FileSpreadsheet,
+  FileText,
   Image as ImageIcon,
-  AlertCircle
+  AlertCircle,
+  X,
+  ShieldCheck,
+  Maximize2
 } from 'lucide-react';
 
 interface ReviewProofModalProps {
@@ -40,15 +33,26 @@ export default function ReviewProofModal({
   settlement,
   onClose,
   currentUser,
-  onSuccess
+  onSuccess,
 }: ReviewProofModalProps) {
   const [copiedUtr, setCopiedUtr] = React.useState<boolean>(false);
-  const [confirmationNotes, setConfirmationNotes] = React.useState<string>('Funds verified and received in full.');
+  const [confirmationNotes, setConfirmationNotes] = React.useState<string>('Funds verified and credited in full.');
   const [isDisputing, setIsDisputing] = React.useState<boolean>(false);
   const [disputeReason, setDisputeReason] = React.useState<string>('');
-
   const [isSubmitting, setIsSubmitting] = React.useState<boolean>(false);
   const [errorMsg, setErrorMsg] = React.useState<string | null>(null);
+
+  // Full-screen image lightbox state
+  const [activeLightboxImg, setActiveLightboxImg] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    if (isOpen) {
+      setIsDisputing(false);
+      setDisputeReason('');
+      setErrorMsg(null);
+      setActiveLightboxImg(null);
+    }
+  }, [isOpen]);
 
   if (!isOpen || !settlement) return null;
 
@@ -70,33 +74,31 @@ export default function ReviewProofModal({
         body: JSON.stringify({
           action: 'confirm',
           actorId: currentUser.id,
-          notes: confirmationNotes
-        })
+          notes: confirmationNotes.trim(),
+        }),
       });
 
       const data = await res.json();
       if (!res.ok || !data.success) {
-        throw new Error(data.error || 'Failed to confirm settlement');
+        throw new Error(data.error || 'Failed to verify and close settlement');
       }
 
       onSuccess();
       onClose();
     } catch (err: any) {
-      setErrorMsg(err.message || 'Error confirming settlement');
+      setErrorMsg(err.message || 'Verification failed');
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const handleDisputeSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setErrorMsg(null);
-
+  const handleDispute = async () => {
     if (!disputeReason.trim()) {
-      setErrorMsg('Please specify why the funds were not verified or what issue occurred');
+      setErrorMsg('Please specify the dispute reason (e.g. UTR not found on bank statement, amount mismatch).');
       return;
     }
 
+    setErrorMsg(null);
     setIsSubmitting(true);
     try {
       const res = await fetch(`/api/settlements/${settlement.id}`, {
@@ -105,360 +107,389 @@ export default function ReviewProofModal({
         body: JSON.stringify({
           action: 'dispute',
           actorId: currentUser.id,
-          reason: disputeReason
-        })
+          reason: disputeReason.trim(),
+        }),
       });
 
       const data = await res.json();
       if (!res.ok || !data.success) {
-        throw new Error(data.error || 'Failed to submit dispute');
+        throw new Error(data.error || 'Failed to flag dispute');
       }
 
       onSuccess();
       onClose();
     } catch (err: any) {
-      setErrorMsg(err.message || 'Error disputing settlement');
+      setErrorMsg(err.message || 'Dispute failed');
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const isRequester = (
-    currentUser.id === settlement.requesterId ||
-    currentUser.role === 'admin'
-  );
+  const isClosed = settlement.status === 'completed';
+  const isDisputed = settlement.status === 'disputed';
 
-  const canConfirm = settlement.status === 'paid_pending_confirmation' && isRequester;
-  const proofType = settlement.clearing?.proofType;
-  const proofUrl = settlement.clearing?.proofUrl;
-  const proofLink = settlement.clearing?.proofLink;
-  const proofFileName = settlement.clearing?.proofFileName;
+  const clr = settlement.clearing;
+  const hasScreenshot = Boolean(clr?.screenshotUrl || (clr?.proofType === 'image' && clr?.proofUrl));
+  const screenshotUrl = clr?.screenshotUrl || (clr?.proofType === 'image' ? clr?.proofUrl : undefined);
+
+  const hasDocument = Boolean(clr?.documentUrl || ((clr?.proofType === 'file_excel_csv' || clr?.proofType === 'file_pdf') && clr?.proofUrl));
+  const documentUrl = clr?.documentUrl || ((clr?.proofType === 'file_excel_csv' || clr?.proofType === 'file_pdf') ? clr?.proofUrl : undefined);
+
+  const isVoucherFallback = !hasScreenshot && !hasDocument && Boolean(clr?.proofUrl);
+
+  const getDownloadHref = (url?: string) => {
+    return url || '#';
+  };
 
   return (
-    <Dialog open={isOpen} onOpenChange={(open) => { if (!open) onClose(); }}>
-      <DialogContent className="max-w-xl p-5 sm:p-6 max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <div className="flex items-center gap-2">
-            <span className="font-mono text-xs text-muted-foreground">{settlement.id}</span>
-            <Badge variant="outline" className="text-xs">
-              {settlement.type === 'merchant_to_subadmin' ? 'Merchant Settlement' : 'Platform Settlement'}
-            </Badge>
-          </div>
-          <DialogTitle className="text-lg font-bold">
-            Review Payment Proof &amp; Verify Receipt
-          </DialogTitle>
-          <DialogDescription className="text-xs">
-            Review the uploaded proof (photo, spreadsheet, or link) and bank UTR to confirm funds.
-          </DialogDescription>
-        </DialogHeader>
-
-        {errorMsg && (
-          <div className="p-3 rounded-lg bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 shrink-0" />
-            <span>{errorMsg}</span>
-          </div>
-        )}
-
-        <div className="space-y-4">
-          {/* Key Metric Banner */}
-          <div className="p-4 rounded-xl bg-slate-900 text-white flex items-center justify-between">
+    <>
+      <Dialog open={isOpen} onOpenChange={(open) => { if (!open) onClose(); }}>
+        <DialogContent className="max-w-2xl bg-[#ffffff] border border-[#e6e5e0] rounded-[12px] p-5 sm:p-6 text-[#26251e] shadow-sm max-h-[92vh] overflow-y-auto">
+          <DialogHeader className="flex items-center justify-between pb-3 border-b border-[#efeee8]">
             <div>
-              <span className="text-slate-400 text-xs block font-mono">Settlement Amount</span>
-              <span className="text-2xl font-bold font-mono text-emerald-400">
-                ₹{settlement.amount.toLocaleString('en-IN')}
-              </span>
-            </div>
-            <div className="text-right">
-              <span className="text-slate-400 text-xs block">Date Range</span>
-              <span className="text-xs font-medium text-slate-200">
-                {settlement.dateRange.startDate} → {settlement.dateRange.endDate}
-              </span>
-            </div>
-          </div>
-
-          {/* UTR & Clearance Details Box */}
-          <div className="p-3.5 bg-muted/50 rounded-xl border border-border/70 space-y-2 text-xs">
-            <div className="flex items-center justify-between">
-              <span className="text-muted-foreground font-medium">Bank UTR Number:</span>
-              <div className="flex items-center gap-2">
-                <span className="font-mono text-sm font-bold text-foreground tracking-wider">
-                  {settlement.clearing?.utrNumber || 'Pending'}
-                </span>
-                {settlement.clearing?.utrNumber && (
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-6 w-6 text-muted-foreground hover:text-foreground"
-                    onClick={handleCopyUtr}
-                    title="Copy UTR"
-                  >
-                    {copiedUtr ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-                  </Button>
-                )}
+              <div className="font-display text-[20px] font-medium tracking-tight text-[#26251e]">
+                Verify Settlement &amp; Bank Proof
+              </div>
+              <div className="text-[12px] text-[#807d72]">
+                Record #{settlement.id} · Payout of ₹{Number(settlement.amount).toLocaleString('en-IN')}.00
               </div>
             </div>
+            <button
+              type="button"
+              onClick={onClose}
+              className="w-7 h-7 rounded-[6px] border border-[#e6e5e0] flex items-center justify-center text-[#807d72] hover:text-[#26251e] hover:bg-[#fafaf7]"
+            >
+              <X className="size-4" />
+            </button>
+          </DialogHeader>
 
-            <div className="flex items-center justify-between pt-1 border-t border-border/60">
-              <span className="text-muted-foreground">Cleared By:</span>
-              <span className="font-medium text-foreground">
-                {settlement.clearing?.clearedByName || settlement.recipientName} ({settlement.clearing?.clearedByRole || 'Agent'})
-              </span>
+          {errorMsg && (
+            <div className="my-3 p-3 rounded-[8px] border border-[#cf2d56]/20 bg-[#fae8ed] text-[12px] text-[#cf2d56] flex items-center gap-2">
+              <AlertCircle className="size-4 shrink-0" />
+              <span>{errorMsg}</span>
             </div>
+          )}
 
-            {settlement.clearing?.clearedAt && (
-              <div className="flex items-center justify-between">
-                <span className="text-muted-foreground">Transfer Timestamp:</span>
-                <span className="font-mono text-foreground">
-                  {new Date(settlement.clearing.clearedAt).toLocaleString()}
-                </span>
+          {/* 1. Mandatory UTR Focus Box */}
+          <div className="my-3.5 p-4 rounded-[8px] border border-[#e6e5e0] bg-[#fafaf7]">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+              <div>
+                <div className="text-[11px] font-mono uppercase tracking-wider text-[#807d72]">
+                  Bank / UPI Transaction Reference (UTR)
+                </div>
+                <div className="font-mono text-[20px] sm:text-[22px] font-bold text-[#1f8a65] tracking-wider mt-0.5">
+                  {clr?.utrNumber || 'Pending clearance'}
+                </div>
               </div>
-            )}
 
-            {settlement.clearing?.clearingRemarks && (
-              <div className="pt-1 text-muted-foreground">
-                <span className="font-medium text-foreground">Remarks: </span>
-                {settlement.clearing.clearingRemarks}
-              </div>
-            )}
-          </div>
-
-          {/* Proof Inspection Section based on ProofType */}
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-foreground">
-                Submitted Payment Proof
-              </span>
-              {proofFileName && (
-                <span className="text-[11px] text-muted-foreground font-mono">
-                  {proofFileName}
-                </span>
+              {clr?.utrNumber && (
+                <button
+                  type="button"
+                  onClick={handleCopyUtr}
+                  className="btn-cursor-secondary text-[12px] h-8 px-3 self-start sm:self-auto"
+                >
+                  {copiedUtr ? (
+                    <>
+                      <Check className="size-3.5 text-[#1f8a65]" />
+                      <span>Copied!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="size-3.5 text-[#807d72]" />
+                      <span>Copy UTR</span>
+                    </>
+                  )}
+                </button>
               )}
             </div>
 
-            {/* If XLSX or CSV document */}
-            {proofType === 'file_excel_csv' && proofUrl && (
-              <div className="p-4 rounded-xl border border-border bg-emerald-50/40 flex items-center justify-between gap-3">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-lg bg-emerald-100 flex items-center justify-center text-emerald-700">
-                    <FileSpreadsheet className="w-5 h-5" />
-                  </div>
+            <div className="mt-3 pt-3 border-t border-[#efeee8] flex flex-wrap items-center justify-between text-[11px] text-[#807d72]">
+              <span>
+                Cleared by <strong className="text-[#26251e]">{clr?.clearedByName || settlement.recipientName}</strong> ({clr?.clearedByRole || 'admin'})
+              </span>
+              {clr?.clearedAt && (
+                <span>{new Date(clr.clearedAt).toLocaleString('en-IN')}</span>
+              )}
+            </div>
+          </div>
+
+          {/* 2. Review Uploaded Proof Files (Stored on Server) */}
+          <div className="space-y-3 mb-4">
+            <div className="flex items-center justify-between text-[12px] font-semibold text-[#26251e]">
+              <span>Attached Banking Media &amp; Files</span>
+              <span className="text-[11px] font-mono text-[#807d72]">Stored on Server</span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {/* Proof Option 1: Payment Screenshot */}
+              {hasScreenshot && screenshotUrl && (
+                <div className="p-3.5 rounded-[8px] border border-[#e6e5e0] bg-[#ffffff] flex flex-col justify-between">
                   <div>
-                    <span className="font-semibold text-xs text-foreground block">
-                      {proofFileName || 'Bank_Reconciliation_Statement.xlsx'}
-                    </span>
-                    <span className="text-[11px] text-muted-foreground">
-                      Excel / CSV Settlement Statement · {settlement.clearing?.proofFileSize || 'Attachment'}
-                    </span>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-[12px] font-semibold text-[#26251e] flex items-center gap-1.5">
+                        <ImageIcon className="size-4 text-[#f54e00]" />
+                        <span>Payment Screenshot</span>
+                      </span>
+                      <span className="text-[10px] font-mono text-[#1f8a65] bg-[#1f8a65]/10 px-1.5 py-0.5 rounded-[4px]">
+                        Image
+                      </span>
+                    </div>
+
+                    {/* Screenshot Preview with Click to Zoom */}
+                    <div 
+                      onClick={() => setActiveLightboxImg(screenshotUrl)}
+                      className="group relative cursor-pointer rounded-[6px] border border-[#e6e5e0] overflow-hidden bg-[#fafaf7] mb-2.5 max-h-[160px] flex items-center justify-center"
+                    >
+                      <img
+                        src={screenshotUrl}
+                        alt="Payment Screenshot"
+                        className="max-h-[160px] w-auto object-contain transition-transform group-hover:scale-[1.02]"
+                      />
+                      <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1 text-white text-[11px] font-medium">
+                        <Maximize2 className="size-3.5" />
+                        <span>Click to Zoom</span>
+                      </div>
+                    </div>
+
+                    <div className="text-[11px] font-mono text-[#5a5852] truncate mb-1">
+                      {clr?.screenshotFileName || clr?.proofFileName || 'payment_receipt.png'}
+                    </div>
+                    {clr?.screenshotFileSize && (
+                      <div className="text-[10px] font-mono text-[#807d72]">
+                        Size: {clr.screenshotFileSize}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Actions: Open in new tab & Download */}
+                  <div className="pt-2.5 mt-2 border-t border-[#efeee8] flex items-center gap-2">
+                    <a
+                      href={screenshotUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex-1 py-1.5 px-2 rounded-[6px] border border-[#e6e5e0] bg-[#fafaf7] hover:bg-[#f2f1ec] text-[11px] font-medium text-[#26251e] text-center flex items-center justify-center gap-1 transition-colors"
+                    >
+                      <ExternalLink className="size-3 text-[#807d72]" />
+                      <span>Open Full Media</span>
+                    </a>
+                    <a
+                      href={screenshotUrl}
+                      download={clr?.screenshotFileName || 'payment_screenshot.png'}
+                      className="py-1.5 px-2.5 rounded-[6px] border border-[#e6e5e0] bg-[#fafaf7] hover:bg-[#f2f1ec] text-[11px] font-medium text-[#26251e] text-center flex items-center justify-center gap-1 transition-colors"
+                      title="Download image"
+                    >
+                      <Download className="size-3 text-[#807d72]" />
+                      <span>Download</span>
+                    </a>
                   </div>
                 </div>
-                <a
-                  href={proofUrl}
-                  download={proofFileName || 'settlement_proof.xlsx'}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 transition-colors shadow-xs"
-                >
-                  <Download className="w-3.5 h-3.5" />
-                  <span>Download</span>
-                </a>
-              </div>
-            )}
+              )}
 
-            {/* If PDF document */}
-            {proofType === 'file_pdf' && proofUrl && (
-              <div className="p-4 rounded-xl border border-border bg-rose-50/40 flex items-center justify-between gap-3">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-lg bg-rose-100 flex items-center justify-center text-rose-700">
-                    <FileText className="w-5 h-5" />
-                  </div>
+              {/* Proof Option 2: Statement / Document File */}
+              {hasDocument && documentUrl && (
+                <div className="p-3.5 rounded-[8px] border border-[#e6e5e0] bg-[#ffffff] flex flex-col justify-between">
                   <div>
-                    <span className="font-semibold text-xs text-foreground block">
-                      {proofFileName || 'Bank_Payment_Receipt.pdf'}
-                    </span>
-                    <span className="text-[11px] text-muted-foreground">
-                      PDF Document Receipt · {settlement.clearing?.proofFileSize || 'Attachment'}
-                    </span>
-                  </div>
-                </div>
-                <a
-                  href={proofUrl}
-                  download={proofFileName || 'settlement_receipt.pdf'}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-slate-900 text-white hover:bg-slate-800 transition-colors shadow-xs"
-                >
-                  <Download className="w-3.5 h-3.5" />
-                  <span>Download PDF</span>
-                </a>
-              </div>
-            )}
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-[12px] font-semibold text-[#26251e] flex items-center gap-1.5">
+                        <FileText className="size-4 text-[#807d72]" />
+                        <span>Banking Document File</span>
+                      </span>
+                      <span className="text-[10px] font-mono text-[#807d72] bg-[#f2f1ec] px-1.5 py-0.5 rounded-[4px]">
+                        {documentUrl.endsWith('.csv') || documentUrl.endsWith('.xlsx') ? 'Excel/CSV' : 'PDF File'}
+                      </span>
+                    </div>
 
-            {/* If Web or Portal Link */}
-            {proofType === 'web_link' && (proofLink || proofUrl) && (
-              <div className="p-4 rounded-xl border border-border bg-blue-50/40 flex items-center justify-between gap-3">
-                <div className="flex items-center gap-3 truncate">
-                  <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center text-blue-700 shrink-0">
-                    <LinkIcon className="w-5 h-5" />
+                    {/* Document Icon Presentation */}
+                    <div className="rounded-[6px] border border-[#e6e5e0] bg-[#fafaf7] p-4 text-center my-2 flex flex-col items-center justify-center gap-2">
+                      {documentUrl.endsWith('.csv') || documentUrl.endsWith('.xlsx') ? (
+                        <FileSpreadsheet className="size-10 text-[#1f8a65]" />
+                      ) : (
+                        <FileText className="size-10 text-[#cf2d56]" />
+                      )}
+                      <div>
+                        <div className="text-[12px] font-mono font-medium text-[#26251e] truncate max-w-[200px]">
+                          {clr?.documentFileName || clr?.proofFileName || 'statement_file.pdf'}
+                        </div>
+                        <div className="text-[10px] font-mono text-[#807d72] mt-0.5">
+                          {clr?.documentFileSize || 'Verified Document'} · Stored on Server
+                        </div>
+                      </div>
+                    </div>
                   </div>
-                  <div className="truncate">
-                    <span className="font-semibold text-xs text-foreground block">External Verification Link</span>
-                    <span className="text-[11px] text-blue-600 truncate block font-mono">
-                      {proofLink || proofUrl}
-                    </span>
-                  </div>
-                </div>
-                <a
-                  href={proofLink || proofUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors shadow-xs shrink-0"
-                >
-                  <span>Open Link</span>
-                  <ExternalLink className="w-3.5 h-3.5" />
-                </a>
-              </div>
-            )}
 
-            {/* If Image or SVG voucher */}
-            {(proofType === 'image' || proofType === 'voucher' || (!proofType && proofUrl)) && proofUrl && (
-              <div className="rounded-xl border border-border overflow-hidden bg-slate-50 p-3 flex flex-col items-center">
-                <div className="max-h-72 w-full overflow-hidden flex items-center justify-center">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={proofUrl}
-                    alt="Payment Voucher Proof"
-                    referrerPolicy="no-referrer"
-                    className="max-h-72 object-contain rounded-lg shadow-xs"
-                  />
+                  {/* Actions: Open in new tab & Download */}
+                  <div className="pt-2.5 mt-2 border-t border-[#efeee8] flex items-center gap-2">
+                    <a
+                      href={documentUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex-1 py-1.5 px-2 rounded-[6px] border border-[#e6e5e0] bg-[#fafaf7] hover:bg-[#f2f1ec] text-[11px] font-medium text-[#26251e] text-center flex items-center justify-center gap-1 transition-colors"
+                    >
+                      <ExternalLink className="size-3 text-[#807d72]" />
+                      <span>Open File</span>
+                    </a>
+                    <a
+                      href={documentUrl}
+                      download={clr?.documentFileName || 'banking_document'}
+                      className="py-1.5 px-2.5 rounded-[6px] border border-[#e6e5e0] bg-[#fafaf7] hover:bg-[#f2f1ec] text-[11px] font-medium text-[#26251e] text-center flex items-center justify-center gap-1 transition-colors"
+                      title="Download file"
+                    >
+                      <Download className="size-3 text-[#807d72]" />
+                      <span>Download</span>
+                    </a>
+                  </div>
                 </div>
-                <div className="w-full flex items-center justify-between text-[11px] text-muted-foreground mt-2 pt-2 border-t border-border">
-                  <span className="flex items-center gap-1 text-emerald-700 font-medium">
-                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                    Verified Transfer Proof
-                  </span>
+              )}
+            </div>
+
+            {/* Fallback Official SVG Voucher (if no user custom upload) */}
+            {isVoucherFallback && clr?.proofUrl && (
+              <div className="p-3 rounded-[8px] border border-[#e6e5e0] bg-[#fafaf7] flex flex-col items-center">
+                <div className="w-full flex items-center justify-between mb-2 text-[12px] font-medium text-[#26251e]">
+                  <span>Cryptographic Electronic Banking Voucher</span>
                   <a
-                    href={proofUrl}
+                    href={clr.proofUrl}
                     target="_blank"
-                    rel="noreferrer"
-                    className="hover:underline flex items-center gap-1 font-medium"
+                    rel="noopener noreferrer"
+                    className="text-[11px] text-[#f54e00] hover:underline flex items-center gap-1"
                   >
-                    <span>View Full Size</span>
-                    <ExternalLink className="w-3 h-3" />
+                    <span>Open SVG Voucher</span>
+                    <ExternalLink className="size-3" />
                   </a>
                 </div>
+                <img
+                  src={clr.proofUrl}
+                  alt="Banking Settlement Voucher"
+                  className="max-h-[300px] w-auto object-contain rounded-[6px] border border-[#e6e5e0]"
+                />
               </div>
             )}
           </div>
 
-          {/* If already completed, show status */}
-          {settlement.status === 'completed' && settlement.confirmation && (
-            <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs space-y-1">
-              <div className="flex items-center gap-1.5 font-bold text-emerald-800">
-                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                <span>Settlement Permanently Reconciled &amp; Closed</span>
-              </div>
-              <div className="text-emerald-700 text-[11px]">
-                Confirmed by {settlement.confirmation.confirmedByName} on{' '}
-                {settlement.confirmation.confirmedAt ? new Date(settlement.confirmation.confirmedAt).toLocaleString() : ''}
-              </div>
+          {/* 3. Payer Remarks */}
+          {clr?.clearingRemarks && (
+            <div className="p-3 rounded-[8px] border border-[#e6e5e0] bg-[#ffffff] text-[12px] text-[#5a5852] mb-3">
+              <span className="font-semibold text-[#26251e]">Payer Note: </span>
+              {clr.clearingRemarks}
             </div>
           )}
 
-          {/* If disputed */}
-          {settlement.status === 'disputed' && (
-            <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs space-y-1">
-              <div className="flex items-center gap-1.5 font-bold text-rose-800">
-                <AlertTriangle className="w-4 h-4 text-rose-600" />
-                <span>Dispute Raised by Payee</span>
-              </div>
-              <p className="text-slate-800 text-xs">
-                {settlement.confirmation?.disputeReason}
-              </p>
-            </div>
-          )}
-
-          {/* Audit trail summary */}
-          <div className="pt-2 border-t border-border">
-            <h4 className="text-xs font-semibold text-foreground mb-2">
-              Permanent Audit Trail ({settlement.auditTrail.length} records)
-            </h4>
-            <div className="space-y-1.5 max-h-36 overflow-y-auto">
-              {settlement.auditTrail.map((log) => (
-                <div key={log.id} className="text-[11px] p-2 bg-muted/40 rounded-lg border border-border/60">
-                  <div className="flex items-center justify-between text-muted-foreground mb-0.5">
-                    <span className="font-semibold text-foreground">
-                      {log.actorName} ({log.actorRole.toUpperCase()})
-                    </span>
-                    <span className="font-mono">{new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                  </div>
-                  <div className="text-muted-foreground">{log.details}</div>
+          {/* 4. Status Banners */}
+          {isClosed && (
+            <div className="p-3.5 rounded-[8px] border border-[#c08532]/30 bg-[#faf5ed] text-[12px] text-[#8c5d1b] flex items-center gap-2 mb-3">
+              <CheckCircle2 className="size-4 shrink-0 text-[#c08532]" />
+              <div>
+                <div className="font-semibold">Settlement Permanently Verified &amp; Closed</div>
+                <div className="text-[11px] mt-0.5">
+                  Verified by {settlement.confirmation?.confirmedByName} on{' '}
+                  {settlement.confirmation?.confirmedAt && new Date(settlement.confirmation.confirmedAt).toLocaleString()}
                 </div>
-              ))}
+              </div>
             </div>
-          </div>
+          )}
 
-          {/* Dispute form if toggled */}
-          {isDisputing && (
-            <form onSubmit={handleDisputeSubmit} className="p-3.5 bg-rose-50 rounded-xl border border-rose-200 space-y-2">
-              <span className="text-xs font-bold text-rose-800 block">
-                Flag Issue / Dispute Settlement
-              </span>
+          {isDisputed && (
+            <div className="p-3.5 rounded-[8px] border border-[#cf2d56]/25 bg-[#fae8ed] text-[12px] text-[#cf2d56] mb-3">
+              <div className="font-semibold flex items-center gap-1.5">
+                <AlertTriangle className="size-4" />
+                <span>Flagged Dispute Notice</span>
+              </div>
+              <div className="mt-1 text-[11px] leading-relaxed">
+                Reason: {settlement.confirmation?.disputeReason}
+              </div>
+            </div>
+          )}
+
+          {/* Dispute Form */}
+          {!isClosed && !isDisputed && isDisputing && (
+            <div className="p-3.5 rounded-[8px] border border-[#cf2d56]/30 bg-[#faf5ed] space-y-3 mb-3">
+              <div className="text-[12px] font-semibold text-[#cf2d56] flex items-center gap-1.5">
+                <AlertTriangle className="size-4" />
+                <span>Report Discrepancy or Missing Funds</span>
+              </div>
               <Textarea
-                required
                 rows={2}
                 value={disputeReason}
                 onChange={(e) => setDisputeReason(e.target.value)}
-                placeholder="Explain why the money was not received or discrepancies with UTR / amount..."
-                className="text-xs bg-white"
+                placeholder="State the reason (e.g. UTR does not appear in bank passbook, net amount received was short)..."
+                className="text-[12px] rounded-[8px] border-[#cf2d56]/30 bg-[#ffffff]"
               />
               <div className="flex justify-end gap-2">
-                <Button
+                <button
                   type="button"
-                  variant="ghost"
-                  size="sm"
                   onClick={() => setIsDisputing(false)}
-                  className="text-xs"
+                  className="btn-cursor-secondary text-[12px] h-8 px-3"
                 >
-                  Cancel
-                </Button>
-                <Button
-                  type="submit"
-                  size="sm"
-                  variant="destructive"
+                  Back
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDispute}
                   disabled={isSubmitting}
-                  className="text-xs font-bold"
+                  className="btn-cursor-primary text-[12px] h-8 px-4 bg-[#cf2d56] hover:bg-[#b52247]"
                 >
-                  Submit Dispute
-                </Button>
+                  {isSubmitting ? 'Logging Dispute...' : 'Confirm & Log Dispute'}
+                </button>
               </div>
-            </form>
-          )}
-        </div>
-
-        <DialogFooter className="pt-2 flex items-center justify-between gap-2 border-t border-border">
-          <Button variant="outline" size="sm" onClick={onClose}>
-            Close Viewer
-          </Button>
-
-          {canConfirm && !isDisputing && (
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setIsDisputing(true)}
-                className="text-rose-600 border-rose-200 hover:bg-rose-50 text-xs"
-              >
-                Dispute
-              </Button>
-              <Button
-                size="sm"
-                onClick={handleConfirmClose}
-                disabled={isSubmitting}
-                className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs gap-1.5"
-              >
-                <CheckCircle2 className="w-4 h-4" />
-                <span>{isSubmitting ? 'Closing...' : 'Confirm Received & Close Settlement'}</span>
-              </Button>
             </div>
           )}
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+
+          {/* Action Footer for Pending Confirmation */}
+          {!isClosed && !isDisputed && !isDisputing && (
+            <div className="pt-3 border-t border-[#efeee8] flex flex-wrap items-center justify-between gap-3">
+              <button
+                type="button"
+                onClick={() => setIsDisputing(true)}
+                className="text-[12px] text-[#cf2d56] hover:underline flex items-center gap-1"
+              >
+                <AlertTriangle className="size-3.5" />
+                <span>Report Discrepancy</span>
+              </button>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="btn-cursor-secondary text-[13px] h-9 px-4"
+                >
+                  Close
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmClose}
+                  disabled={isSubmitting}
+                  className="btn-cursor-primary text-[13px] h-9 px-5 bg-[#1f8a65] hover:bg-[#186f51]"
+                >
+                  <ShieldCheck className="size-4" />
+                  <span>{isSubmitting ? 'Verifying...' : 'Verify Funds & Close Permanently'}</span>
+                </button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Lightbox Modal for High-Resolution Screenshot Zoom */}
+      {activeLightboxImg && (
+        <div 
+          onClick={() => setActiveLightboxImg(null)}
+          className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4 backdrop-blur-xs cursor-zoom-out"
+        >
+          <div className="relative max-w-4xl max-h-[90vh] bg-[#ffffff] p-2 rounded-[10px] shadow-2xl">
+            <button
+              onClick={() => setActiveLightboxImg(null)}
+              className="absolute -top-3 -right-3 w-8 h-8 rounded-full bg-[#26251e] text-white flex items-center justify-center shadow-lg hover:bg-[#000000]"
+            >
+              <X className="size-4" />
+            </button>
+            <img
+              src={activeLightboxImg}
+              alt="High Resolution Screenshot"
+              className="max-h-[85vh] w-auto rounded-[6px] object-contain"
+            />
+          </div>
+        </div>
+      )}
+    </>
   );
 }

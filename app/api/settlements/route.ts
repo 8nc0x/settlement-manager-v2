@@ -1,10 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSettlements, createSettlement, getUserById } from '@/lib/db';
+import { getSettlements, createSettlement, getUserById, checkUtrAvailability } from '@/lib/db';
 import { Role } from '@/types';
 
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
+    const checkUtr = searchParams.get('checkUtr');
+    const excludeId = searchParams.get('excludeId') || undefined;
+    if (checkUtr) {
+      const result = checkUtrAvailability(checkUtr, excludeId);
+      return NextResponse.json({ success: true, ...result });
+    }
+
     const role = (searchParams.get('role') as Role) || undefined;
     const userId = searchParams.get('userId') || undefined;
     const status = searchParams.get('status') || undefined;
@@ -28,7 +35,7 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { requesterId, amount, dateRange, payoutDetails, merchantNotes } = body;
+    const { requesterId, amount, dateRange, payoutDetails, merchantNotes, recipientType } = body;
 
     if (!requesterId) {
       return NextResponse.json({ success: false, error: 'Requester ID is required' }, { status: 400 });
@@ -64,7 +71,8 @@ export async function POST(req: NextRequest) {
         endTime: dateRange.endTime || '23:59'
       },
       payoutDetails,
-      merchantNotes
+      merchantNotes,
+      recipientType
     });
 
     return NextResponse.json({ success: true, settlement: newSettlement }, { status: 201 });

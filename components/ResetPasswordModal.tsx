@@ -2,7 +2,10 @@
 
 import React from 'react';
 import { User } from '@/types';
-import { X, KeyRound, Copy, Check, AlertCircle } from 'lucide-react';
+import { Dialog, DialogContent, DialogHeader } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { KeyRound, Copy, Check, AlertCircle, RefreshCw, X } from 'lucide-react';
 
 interface ResetPasswordModalProps {
   isOpen: boolean;
@@ -17,7 +20,7 @@ export default function ResetPasswordModal({
   targetUser,
   onClose,
   currentUser,
-  onSuccess
+  onSuccess,
 }: ResetPasswordModalProps) {
   const [newPassword, setNewPassword] = React.useState<string>(() => `reset@${Math.floor(1000 + Math.random() * 9000)}`);
   const [isSubmitting, setIsSubmitting] = React.useState<boolean>(false);
@@ -25,13 +28,22 @@ export default function ResetPasswordModal({
   const [successInfo, setSuccessInfo] = React.useState<{ password: string } | null>(null);
   const [copied, setCopied] = React.useState<boolean>(false);
 
+  React.useEffect(() => {
+    if (isOpen) {
+      setNewPassword(`pwd@${Math.floor(1000 + Math.random() * 9000)}`);
+      setErrorMsg(null);
+      setSuccessInfo(null);
+      setCopied(false);
+    }
+  }, [isOpen, targetUser]);
+
+  if (!isOpen || !targetUser) return null;
+
   const handleClose = () => {
     setSuccessInfo(null);
     setErrorMsg(null);
     onClose();
   };
-
-  if (!isOpen || !targetUser) return null;
 
   const handleReset = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -51,8 +63,8 @@ export default function ResetPasswordModal({
           action: 'reset-password',
           targetUserId: targetUser.id,
           newPassword: newPassword.trim(),
-          requesterId: currentUser.id
-        })
+          requesterId: currentUser.id,
+        }),
       });
 
       const data = await res.json();
@@ -70,134 +82,124 @@ export default function ResetPasswordModal({
   };
 
   const handleCopy = () => {
-    if (successInfo) {
-      const text = `Updated Credentials for ${targetUser.name} (${targetUser.email}):\nNew Password: ${successInfo.password}\nNote: Please remember this password as there is no forgot password link.`;
-      navigator.clipboard.writeText(text);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    }
+    if (!successInfo) return;
+    const text = `SettleTrack Password Reset\nAccount: ${targetUser.name} (${targetUser.email})\nNew Password: ${successInfo.password}\nLogin URL: ${window.location.origin}`;
+    navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-xs">
-      <div className="relative w-full max-w-md bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 p-5 sm:p-6">
-        <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
-          <div>
-            <h2 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
-              <KeyRound className="w-5 h-5 text-amber-500" />
-              <span>Reset Password</span>
-            </h2>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-              Reset login credentials for <span className="font-semibold text-slate-800 dark:text-slate-200">{targetUser.name}</span>
-            </p>
+    <Dialog open={isOpen} onOpenChange={(open) => { if (!open) handleClose(); }}>
+      <DialogContent className="max-w-md bg-[#ffffff] border border-[#e6e5e0] rounded-[12px] p-6 text-[#26251e] shadow-sm">
+        <DialogHeader className="flex items-center justify-between pb-3 border-b border-[#efeee8]">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-[6px] bg-[#fafaf7] border border-[#e6e5e0] flex items-center justify-center text-[#f54e00]">
+              <KeyRound className="size-4" />
+            </div>
+            <div>
+              <div className="font-display text-[18px] font-medium tracking-tight text-[#26251e]">
+                Reset Merchant Password
+              </div>
+              <div className="text-[11px] font-mono text-[#807d72] truncate max-w-[240px]">
+                {targetUser.email}
+              </div>
+            </div>
           </div>
           <button
-            onClick={onClose}
-            className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"
+            type="button"
+            onClick={handleClose}
+            className="w-7 h-7 rounded-[6px] border border-[#e6e5e0] flex items-center justify-center text-[#807d72] hover:text-[#26251e] hover:bg-[#fafaf7]"
           >
-            <X className="w-5 h-5" />
+            <X className="size-4" />
           </button>
-        </div>
+        </DialogHeader>
 
         {errorMsg && (
-          <div className="mt-3 p-3 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-600 dark:text-rose-400 text-xs flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 shrink-0" />
+          <div className="my-3 p-3 rounded-[8px] border border-[#cf2d56]/20 bg-[#fae8ed] text-[12px] text-[#cf2d56] flex items-center gap-2">
+            <AlertCircle className="size-4 shrink-0" />
             <span>{errorMsg}</span>
           </div>
         )}
 
         {successInfo ? (
-          <div className="mt-4 space-y-3">
-            <div className="p-3.5 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-800 rounded-xl space-y-2">
-              <span className="text-xs font-bold text-emerald-800 dark:text-emerald-300 flex items-center gap-1.5">
-                <Check className="w-4 h-4 text-emerald-500" />
-                Password Reset Successfully!
-              </span>
-              <p className="text-xs text-slate-600 dark:text-slate-300">
-                Share this new password directly with {targetUser.name}:
-              </p>
-              <div className="p-2.5 bg-white dark:bg-slate-800 rounded border border-slate-200 dark:border-slate-700 font-mono text-sm font-bold text-center text-slate-900 dark:text-white tracking-wider">
-                {successInfo.password}
-              </div>
+          <div className="py-3 space-y-3">
+            <div className="p-3 rounded-[8px] border border-[#1f8a65]/30 bg-[#e2f4eb] text-[#1f8a65] text-[12px] flex items-center gap-2 font-medium">
+              <Check className="size-4 shrink-0" />
+              <span>Password successfully updated in database!</span>
             </div>
 
-            <button
-              type="button"
-              onClick={handleCopy}
-              className="w-full py-2 px-3 text-xs font-semibold bg-slate-900 dark:bg-slate-800 hover:bg-slate-800 text-white rounded-lg flex items-center justify-center gap-2 transition-colors"
-            >
-              {copied ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
-              <span>{copied ? 'Copied to Clipboard!' : 'Copy Info for User'}</span>
-            </button>
+            <div className="p-3.5 rounded-[8px] border border-[#e6e5e0] bg-[#fafaf7] font-mono text-[12px] space-y-1.5">
+              <div className="text-[#807d72] text-[11px]">New Password:</div>
+              <div className="text-[18px] font-bold text-[#f54e00]">{successInfo.password}</div>
+            </div>
 
-            <div className="flex justify-end pt-2">
+            <div className="flex justify-end gap-2 pt-2">
               <button
                 type="button"
-                onClick={onClose}
-                className="px-4 py-2 text-xs font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg"
+                onClick={handleCopy}
+                className="btn-cursor-secondary text-[12px] h-8 px-3"
               >
-                Close
+                {copied ? <Check className="size-3 text-[#1f8a65]" /> : <Copy className="size-3" />}
+                <span>{copied ? 'Copied!' : 'Copy'}</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleClose}
+                className="btn-cursor-primary text-[12px] h-8 px-4"
+              >
+                Done
               </button>
             </div>
           </div>
         ) : (
-          <form onSubmit={handleReset} className="mt-4 space-y-4">
-            <div className="p-2.5 bg-slate-50 dark:bg-slate-800/60 rounded-lg border border-slate-200 dark:border-slate-800 text-xs">
-              <div className="flex justify-between text-slate-500">
-                <span>Account Role:</span>
-                <span className="font-semibold uppercase text-slate-800 dark:text-slate-200">{targetUser.role}</span>
-              </div>
-              <div className="flex justify-between text-slate-500 mt-1">
-                <span>Login Email:</span>
-                <span className="font-mono text-slate-800 dark:text-slate-200">{targetUser.email}</span>
-              </div>
-            </div>
-
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+          <form onSubmit={handleReset} className="space-y-4 pt-2">
+            <div className="space-y-1">
+              <div className="flex items-center justify-between">
+                <Label htmlFor="resetPasswordInput" className="text-[12px] font-semibold text-[#26251e] block">
                   New Password *
-                </label>
+                </Label>
                 <button
                   type="button"
                   onClick={() => setNewPassword(`pwd@${Math.floor(1000 + Math.random() * 9000)}`)}
-                  className="text-[11px] text-emerald-600 dark:text-emerald-400 hover:underline"
+                  className="text-[11px] text-[#f54e00] hover:underline flex items-center gap-1 font-mono"
                 >
-                  Generate New
+                  <RefreshCw className="size-3" />
+                  <span>Regenerate</span>
                 </button>
               </div>
-              <input
+              <Input
+                id="resetPasswordInput"
                 type="text"
                 required
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
-                className="w-full text-xs font-mono font-bold rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 p-2.5 text-slate-900 dark:text-white"
+                className="font-mono text-[14px] font-bold text-[#f54e00] h-9 rounded-[8px] border-[#e6e5e0] bg-[#fafaf7]"
               />
-              <span className="text-[11px] text-slate-500 mt-1 block">
-                Since there is no self-serve forgot password flow, instruct the user to remember this password.
+              <span className="text-[11px] text-[#807d72] block">
+                Since there is no self-serve forgot password flow, remember to communicate this password to the merchant.
               </span>
             </div>
 
-            <div className="pt-2 flex items-center justify-end gap-2 border-t border-slate-100 dark:border-slate-800">
+            <div className="pt-2 border-t border-[#efeee8] flex justify-end gap-2.5">
               <button
                 type="button"
-                onClick={onClose}
-                disabled={isSubmitting}
-                className="px-4 py-2 text-xs font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg"
+                onClick={handleClose}
+                className="btn-cursor-secondary text-[13px] h-9 px-4"
               >
                 Cancel
               </button>
               <button
                 type="submit"
                 disabled={isSubmitting}
-                className="px-5 py-2 text-xs font-bold text-slate-950 bg-amber-400 hover:bg-amber-300 disabled:opacity-50 rounded-lg transition-colors shadow-xs"
+                className="btn-cursor-primary text-[13px] h-9 px-5"
               >
-                {isSubmitting ? 'Resetting...' : 'Update Password'}
+                {isSubmitting ? 'Updating...' : 'Set Password'}
               </button>
             </div>
           </form>
         )}
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

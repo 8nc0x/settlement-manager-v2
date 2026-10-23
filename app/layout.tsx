@@ -1,29 +1,51 @@
-import type {Metadata} from 'next';
+import type { Metadata, Viewport } from 'next';
 import './globals.css';
-import { Geist } from "next/font/google";
-import { cn } from "@/lib/utils";
+import { Inter, JetBrains_Mono } from 'next/font/google';
+import { cn } from '@/lib/utils';
+import SessionProviderWrapper from '@/components/SessionProviderWrapper';
 
-const geist = Geist({subsets:['latin'],variable:'--font-sans'});
+const inter = Inter({
+  subsets: ['latin'],
+  variable: '--font-sans',
+  display: 'swap',
+});
+
+const jetbrainsMono = JetBrains_Mono({
+  subsets: ['latin'],
+  variable: '--font-mono',
+  display: 'swap',
+});
 
 export const metadata: Metadata = {
-  title: 'SettleTrack - Multi-Tier Settlement & UTR Record System',
-  description: 'Multi-tier settlement record and clearing software for Admins, Sub-Admins, and Merchants with UPI/Bank payouts, UTR proof verification, and permanent ledger records.',
-  openGraph: {
-    title: 'SettleTrack - Multi-Tier Settlement & UTR Record System',
-    description: 'Multi-tier settlement record and clearing software for Admins, Sub-Admins, and Merchants with UPI/Bank payouts, UTR proof verification, and permanent ledger records.',
-    type: 'website',
-  },
-  twitter: {
-    card: 'summary_large_image',
-    title: 'SettleTrack - Multi-Tier Settlement & UTR Record System',
-    description: 'Multi-tier settlement record and clearing software for Admins, Sub-Admins, and Merchants with UPI/Bank payouts, UTR proof verification, and permanent ledger records.',
+  title: 'SettleTrack — Multi-Tier Settlement & UTR Record System',
+  description:
+    'Production-grade multi-tier settlement record and clearing software for Admins, Sub-Admins, and Merchants with UPI/Bank payouts, UTR proof verification, and permanent ledger records.',
+  applicationName: 'SettleTrack',
+  icons: {
+    icon: '/favicon.ico',
   },
 };
 
-export default function RootLayout({children}: {children: React.ReactNode}) {
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+  viewportFit: 'cover',
+  themeColor: '#f7f7f4',
+  colorScheme: 'light',
+};
+
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   return (
-    <html lang="en" className={cn("font-sans", geist.variable)}>
-      <body suppressHydrationWarning>{children}</body>
+    <html lang="en" className={cn('font-sans', inter.variable, jetbrainsMono.variable)}>
+      <body className="bg-[#f7f7f4] text-[#26251e] antialiased min-h-screen selection:bg-[#f54e00]/20 selection:text-[#f54e00]" suppressHydrationWarning>
+        <SessionProviderWrapper>{children}</SessionProviderWrapper>
+      </body>
     </html>
   );
 }

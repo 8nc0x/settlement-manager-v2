@@ -2,18 +2,10 @@
 
 import React from 'react';
 import { User } from '@/types';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
-} from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogHeader } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { UserPlus, Copy, Check, AlertCircle } from 'lucide-react';
+import { UserPlus, Copy, Check, AlertCircle, RefreshCw, X, Shield } from 'lucide-react';
 
 interface MerchantManagementModalProps {
   isOpen: boolean;
@@ -26,7 +18,7 @@ export default function MerchantManagementModal({
   isOpen,
   onClose,
   currentUser,
-  onSuccess
+  onSuccess,
 }: MerchantManagementModalProps) {
   const [name, setName] = React.useState<string>('');
   const [businessName, setBusinessName] = React.useState<string>('');
@@ -45,6 +37,24 @@ export default function MerchantManagementModal({
   const [createdCredentials, setCreatedCredentials] = React.useState<{ email: string; password: string; name: string } | null>(null);
   const [copiedCreds, setCopiedCreds] = React.useState<boolean>(false);
 
+  React.useEffect(() => {
+    if (isOpen) {
+      setName('');
+      setBusinessName('');
+      setEmail('');
+      setPhone('');
+      setPassword(`merch@${Math.floor(1000 + Math.random() * 9000)}`);
+      setDefaultUpiId('');
+      setAccountHolder('');
+      setAccountNumber('');
+      setIfscCode('');
+      setBankName('');
+      setErrorMsg(null);
+      setCreatedCredentials(null);
+      setCopiedCreds(false);
+    }
+  }, [isOpen]);
+
   if (!isOpen) return null;
 
   const handleClose = () => {
@@ -58,7 +68,7 @@ export default function MerchantManagementModal({
     setErrorMsg(null);
 
     if (!name.trim() || !email.trim() || !password.trim()) {
-      setErrorMsg('Name, login email, and initial password are required');
+      setErrorMsg('Name, login email and initial password are required');
       return;
     }
 
@@ -69,21 +79,23 @@ export default function MerchantManagementModal({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: name.trim(),
-          businessName: businessName.trim() || name.trim(),
-          email: email.trim().toLowerCase(),
+          businessName: businessName.trim(),
+          email: email.trim(),
           phone: phone.trim(),
           password: password.trim(),
           role: 'merchant',
           createdBy: currentUser.id,
           subAdminId: currentUser.role === 'subadmin' ? currentUser.id : undefined,
           defaultUpiId: defaultUpiId.trim() || undefined,
-          bankDetails: accountNumber.trim() ? {
-            accountHolder: accountHolder.trim() || name.trim(),
-            accountNumber: accountNumber.trim(),
-            ifscCode: ifscCode.trim().toUpperCase(),
-            bankName: bankName.trim() || 'Bank Account'
-          } : undefined
-        })
+          bankDetails: accountNumber.trim()
+            ? {
+                accountHolder: accountHolder.trim() || name.trim(),
+                accountNumber: accountNumber.trim(),
+                ifscCode: ifscCode.trim().toUpperCase(),
+                bankName: bankName.trim(),
+              }
+            : undefined,
+        }),
       });
 
       const data = await res.json();
@@ -92,10 +104,11 @@ export default function MerchantManagementModal({
       }
 
       setCreatedCredentials({
-        email: email.trim().toLowerCase(),
+        name: name.trim(),
+        email: email.trim(),
         password: password.trim(),
-        name: name.trim()
       });
+
       onSuccess();
     } catch (err: any) {
       setErrorMsg(err.message || 'Error creating merchant account');
@@ -104,225 +117,229 @@ export default function MerchantManagementModal({
     }
   };
 
-  const handleCopyCredentials = () => {
-    if (createdCredentials) {
-      const text = `SettleTrack Merchant Credentials:\nMerchant: ${createdCredentials.name}\nLogin ID / Email: ${createdCredentials.email}\nPassword: ${createdCredentials.password}\nNote: Keep this password safe. Contact your Agent for any reset.`;
-      navigator.clipboard.writeText(text);
-      setCopiedCreds(true);
-      setTimeout(() => setCopiedCreds(false), 2000);
-    }
+  const copyCredsToClipboard = () => {
+    if (!createdCredentials) return;
+    const text = `SettleTrack Merchant Login Credentials\nMerchant: ${createdCredentials.name}\nEmail: ${createdCredentials.email}\nPassword: ${createdCredentials.password}\nLogin URL: ${window.location.origin}`;
+    navigator.clipboard.writeText(text);
+    setCopiedCreds(true);
+    setTimeout(() => setCopiedCreds(false), 2000);
   };
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => { if (!open) handleClose(); }}>
-      <DialogContent className="max-w-lg p-5 sm:p-6 max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <div className="flex items-center gap-2">
-            <UserPlus className="w-5 h-5 text-emerald-600" />
-            <DialogTitle className="text-lg font-bold">Create Merchant Account</DialogTitle>
+      <DialogContent className="max-w-xl bg-[#ffffff] border border-[#e6e5e0] rounded-[12px] p-6 text-[#26251e] shadow-sm max-h-[90vh] overflow-y-auto">
+        <DialogHeader className="flex items-center justify-between pb-3 border-b border-[#efeee8]">
+          <div>
+            <div className="font-display text-[20px] font-medium tracking-tight text-[#26251e]">
+              Create Merchant Account
+            </div>
+            <div className="text-[12px] text-[#807d72]">
+              Onboard a store merchant and issue immediate login credentials
+            </div>
           </div>
-          <DialogDescription className="text-xs">
-            Add a merchant under your agency and issue login credentials.
-          </DialogDescription>
+          <button
+            type="button"
+            onClick={handleClose}
+            className="w-7 h-7 rounded-[6px] border border-[#e6e5e0] flex items-center justify-center text-[#807d72] hover:text-[#26251e] hover:bg-[#fafaf7]"
+          >
+            <X className="size-4" />
+          </button>
         </DialogHeader>
 
         {errorMsg && (
-          <div className="p-3 rounded-lg bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 shrink-0" />
+          <div className="my-3 p-3 rounded-[8px] border border-[#cf2d56]/20 bg-[#fae8ed] text-[12px] text-[#cf2d56] flex items-center gap-2">
+            <AlertCircle className="size-4 shrink-0" />
             <span>{errorMsg}</span>
           </div>
         )}
 
         {createdCredentials ? (
-          <div className="space-y-4">
-            <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl space-y-2.5">
-              <span className="text-xs font-bold text-emerald-900 flex items-center gap-1.5">
-                <Check className="w-4 h-4 text-emerald-600" />
-                Merchant Account Created Successfully!
-              </span>
-              <p className="text-xs text-muted-foreground">
-                Give these credentials directly to the merchant. There is no forget-password link; you can reset their password anytime from your dashboard.
-              </p>
-
-              <div className="bg-card p-3 rounded-lg border border-border space-y-1.5 font-mono text-xs">
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Login Email:</span>
-                  <span className="font-bold text-foreground">{createdCredentials.email}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Password:</span>
-                  <span className="font-bold text-emerald-700">{createdCredentials.password}</span>
+          <div className="py-4 space-y-4">
+            <div className="p-4 rounded-[8px] border border-[#1f8a65]/30 bg-[#e2f4eb] text-[#1f8a65] flex items-center gap-3">
+              <Check className="size-5 shrink-0" />
+              <div>
+                <div className="font-semibold text-[13px]">Merchant Account Created Successfully!</div>
+                <div className="text-[11px] text-[#26251e] mt-0.5">
+                  Share these credentials directly with {createdCredentials.name}. There is no email self-service flow.
                 </div>
               </div>
-
-              <Button
-                type="button"
-                onClick={handleCopyCredentials}
-                className="w-full h-8 text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white gap-2 shadow-xs"
-              >
-                {copiedCreds ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-                <span>{copiedCreds ? 'Copied to Clipboard!' : 'Copy Credentials for Merchant'}</span>
-              </Button>
             </div>
 
-            <DialogFooter>
-              <Button type="button" variant="outline" size="sm" onClick={handleClose}>
+            <div className="p-4 rounded-[8px] border border-[#e6e5e0] bg-[#fafaf7] font-mono text-[12px] space-y-2">
+              <div className="flex justify-between">
+                <span className="text-[#807d72]">Login Email:</span>
+                <span className="font-semibold text-[#26251e]">{createdCredentials.email}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-[#807d72]">Initial Password:</span>
+                <span className="font-bold text-[#f54e00]">{createdCredentials.password}</span>
+              </div>
+            </div>
+
+            <div className="pt-2 flex items-center justify-end gap-2.5">
+              <button
+                type="button"
+                onClick={copyCredsToClipboard}
+                className="btn-cursor-secondary text-[13px] h-9 px-4"
+              >
+                {copiedCreds ? <Check className="size-3.5 text-[#1f8a65]" /> : <Copy className="size-3.5" />}
+                <span>{copiedCreds ? 'Copied to Clipboard!' : 'Copy Credentials'}</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleClose}
+                className="btn-cursor-primary text-[13px] h-9 px-5"
+              >
                 Done
-              </Button>
-            </DialogFooter>
+              </button>
+            </div>
           </div>
         ) : (
-          <form onSubmit={handleSubmit} className="space-y-3.5">
+          <form onSubmit={handleSubmit} className="space-y-4 pt-2">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1">
-                <Label htmlFor="merchantName" className="text-xs font-semibold">
+                <Label htmlFor="mName" className="text-[12px] font-semibold text-[#26251e] block">
                   Merchant Full Name *
                 </Label>
                 <Input
-                  id="merchantName"
-                  type="text"
+                  id="mName"
                   required
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  placeholder="e.g. Ramesh Patel"
-                  className="text-xs"
+                  placeholder="e.g. Sunil Sharma"
+                  className="text-[12px] h-9 rounded-[8px] border-[#e6e5e0] bg-[#ffffff]"
                 />
               </div>
 
               <div className="space-y-1">
-                <Label htmlFor="businessNameInput" className="text-xs font-semibold">
+                <Label htmlFor="mBusiness" className="text-[12px] font-semibold text-[#26251e] block">
                   Business / Store Name
                 </Label>
                 <Input
-                  id="businessNameInput"
-                  type="text"
+                  id="mBusiness"
                   value={businessName}
                   onChange={(e) => setBusinessName(e.target.value)}
-                  placeholder="e.g. Patel Hardware"
-                  className="text-xs"
+                  placeholder="e.g. Sharma Electronics Retail"
+                  className="text-[12px] h-9 rounded-[8px] border-[#e6e5e0] bg-[#ffffff]"
                 />
               </div>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1">
-                <Label htmlFor="merchantEmailInput" className="text-xs font-semibold">
-                  Login Email / ID *
+                <Label htmlFor="mEmail" className="text-[12px] font-semibold text-[#26251e] block">
+                  Login Email *
                 </Label>
                 <Input
-                  id="merchantEmailInput"
+                  id="mEmail"
                   type="email"
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="merchant.patel@store.com"
-                  className="font-mono text-xs"
+                  placeholder="merchant.store@domain.com"
+                  className="text-[12px] font-mono h-9 rounded-[8px] border-[#e6e5e0] bg-[#ffffff]"
                 />
               </div>
 
               <div className="space-y-1">
-                <Label htmlFor="phoneInput" className="text-xs font-semibold">
-                  Phone Number
+                <Label htmlFor="mPhone" className="text-[12px] font-semibold text-[#26251e] block">
+                  Contact Mobile Number
                 </Label>
                 <Input
-                  id="phoneInput"
+                  id="mPhone"
                   type="tel"
                   value={phone}
                   onChange={(e) => setPhone(e.target.value)}
-                  placeholder="+91 98765 43210"
-                  className="text-xs"
+                  placeholder="+91 98200 12345"
+                  className="text-[12px] font-mono h-9 rounded-[8px] border-[#e6e5e0] bg-[#ffffff]"
                 />
               </div>
             </div>
 
+            {/* Generated Password */}
             <div className="space-y-1">
               <div className="flex items-center justify-between">
-                <Label htmlFor="passInput" className="text-xs font-semibold">
-                  Initial Password *
+                <Label htmlFor="mPassword" className="text-[12px] font-semibold text-[#26251e] block">
+                  Initial Login Password *
                 </Label>
                 <button
                   type="button"
                   onClick={() => setPassword(`merch@${Math.floor(1000 + Math.random() * 9000)}`)}
-                  className="text-[11px] text-emerald-600 hover:underline"
+                  className="text-[11px] text-[#f54e00] hover:underline flex items-center gap-1 font-mono"
                 >
-                  Regenerate
+                  <RefreshCw className="size-3" />
+                  <span>Regenerate</span>
                 </button>
               </div>
               <Input
-                id="passInput"
+                id="mPassword"
                 type="text"
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="font-mono font-bold text-xs"
+                className="font-mono text-[13px] font-bold text-[#f54e00] h-9 rounded-[8px] border-[#e6e5e0] bg-[#fafaf7]"
               />
-              <span className="text-[10px] text-muted-foreground block">
-                No password reset email is sent. You can reset this password anytime from your dashboard.
+              <span className="text-[11px] text-[#807d72] block">
+                Instruct the merchant to save this password. You can reset it anytime from your dashboard.
               </span>
             </div>
 
+            {/* Default Payout UPI */}
             <div className="space-y-1">
-              <Label htmlFor="defaultUpi" className="text-xs font-semibold">
-                Default Payout UPI ID (Optional)
+              <Label htmlFor="defaultUpi" className="text-[12px] font-semibold text-[#26251e] block">
+                Default Payout UPI VPA (Optional)
               </Label>
               <Input
                 id="defaultUpi"
                 type="text"
                 value={defaultUpiId}
                 onChange={(e) => setDefaultUpiId(e.target.value)}
-                placeholder="patel.store@upi"
-                className="font-mono text-xs"
+                placeholder="storename@upi"
+                className="font-mono text-[12px] h-9 rounded-[8px] border-[#e6e5e0] bg-[#ffffff]"
               />
             </div>
 
-            {/* Bank details */}
-            <div className="p-3 bg-muted/40 rounded-xl border border-border space-y-2">
-              <Label className="text-xs font-semibold block">Bank Account Details (Optional)</Label>
+            {/* Bank details accordion / panel */}
+            <div className="p-3 rounded-[8px] border border-[#e6e5e0] bg-[#fafaf7] space-y-2">
+              <div className="text-[11px] font-mono uppercase text-[#807d72]">
+                Optional Bank Account for Settlements
+              </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 <Input
                   type="text"
-                  value={accountHolder}
-                  onChange={(e) => setAccountHolder(e.target.value)}
-                  placeholder="A/C Holder Name"
-                  className="text-xs bg-background"
-                />
-                <Input
-                  type="text"
+                  placeholder="Bank Name (e.g. HDFC)"
                   value={bankName}
                   onChange={(e) => setBankName(e.target.value)}
-                  placeholder="Bank Name (e.g. SBI)"
-                  className="text-xs bg-background"
+                  className="text-[12px] h-8 rounded-[6px] border-[#e6e5e0] bg-[#ffffff]"
                 />
                 <Input
                   type="text"
+                  placeholder="Account Number"
                   value={accountNumber}
                   onChange={(e) => setAccountNumber(e.target.value)}
-                  placeholder="Account Number"
-                  className="font-mono text-xs bg-background"
-                />
-                <Input
-                  type="text"
-                  value={ifscCode}
-                  onChange={(e) => setIfscCode(e.target.value.toUpperCase())}
-                  placeholder="IFSC Code"
-                  className="font-mono uppercase text-xs bg-background"
+                  className="text-[12px] font-mono h-8 rounded-[6px] border-[#e6e5e0] bg-[#ffffff]"
                 />
               </div>
             </div>
 
-            <DialogFooter className="pt-2 gap-2">
-              <Button type="button" variant="outline" size="sm" onClick={handleClose} disabled={isSubmitting}>
-                Cancel
-              </Button>
-              <Button
-                type="submit"
-                size="sm"
+            {/* Submit */}
+            <div className="pt-3 border-t border-[#efeee8] flex items-center justify-end gap-2.5">
+              <button
+                type="button"
+                onClick={handleClose}
                 disabled={isSubmitting}
-                className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold"
+                className="btn-cursor-secondary text-[13px] h-9 px-4"
               >
-                {isSubmitting ? 'Creating...' : 'Create Merchant Account'}
-              </Button>
-            </DialogFooter>
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={isSubmitting}
+                className="btn-cursor-primary text-[13px] h-9 px-5"
+              >
+                {isSubmitting ? 'Creating...' : 'Create Merchant & Issue Credentials'}
+              </button>
+            </div>
           </form>
         )}
       </DialogContent>

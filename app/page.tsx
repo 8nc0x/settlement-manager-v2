@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import { useSession } from 'next-auth/react';
 import { User, Settlement, Role, SettlementStats, PlatformCollectionAccount } from '@/types';
 import Navbar from '@/components/Navbar';
 import BottomNav from '@/components/BottomNav';
@@ -12,40 +13,49 @@ import MerchantManagementModal from '@/components/MerchantManagementModal';
 import ResetPasswordModal from '@/components/ResetPasswordModal';
 import PlatformAccountsModal from '@/components/PlatformAccountsModal';
 import AuthView from '@/components/AuthView';
-import { 
-  PlusCircle, 
-  Search, 
-  Download, 
-  Users, 
-  Building2, 
-  KeyRound, 
-  CheckCircle2, 
-  Clock3, 
-  AlertCircle, 
-  ArrowUpRight, 
-  ArrowDownLeft, 
-  FileText, 
-  Filter, 
+import {
+  Plus,
+  Search,
+  Download,
+  Users,
+  Building2,
+  KeyRound,
+  CheckCircle2,
+  Clock3,
+  AlertTriangle,
+  ArrowUpRight,
+  FileText,
   Smartphone,
-  ShieldCheck,
   RefreshCw,
-  ExternalLink
+  ChevronRight,
+  ShieldCheck,
+  Check,
+  Calendar,
+  Layers,
+  FileSpreadsheet,
 } from 'lucide-react';
 
+const statusFilters = [
+  { key: 'all', label: 'All Records' },
+  { key: 'pending', label: 'Pending Clearance' },
+  { key: 'paid_pending_confirmation', label: 'Awaiting Verification' },
+  { key: 'completed', label: 'Closed & Locked' },
+  { key: 'disputed', label: 'Discrepancies' },
+];
+
 export default function Home() {
+  const { data: session, status: authStatus } = useSession();
   const [currentUser, setCurrentUser] = React.useState<User | null>(null);
-  const [loadingUser, setLoadingUser] = React.useState<boolean>(true);
   const [currentTab, setCurrentTab] = React.useState<string>('dashboard');
 
   // Settlements data
   const [settlements, setSettlements] = React.useState<Settlement[]>([]);
   const [stats, setStats] = React.useState<SettlementStats | null>(null);
-  const [loadingData, setLoadingData] = React.useState<boolean>(false);
 
   // Filters
   const [searchQuery, setSearchQuery] = React.useState<string>('');
   const [statusFilter, setStatusFilter] = React.useState<string>('all');
-  const [typeFilter, setTypeFilter] = React.useState<string>('all');
+  const searchInputRef = React.useRef<HTMLInputElement>(null);
 
   // Users data for sub-admin / admin
   const [userList, setUserList] = React.useState<User[]>([]);
@@ -65,420 +75,324 @@ export default function Home() {
 
   const [isPlatformAccountsModalOpen, setIsPlatformAccountsModalOpen] = React.useState<boolean>(false);
 
-  // Load session
+  // Sync user from NextAuth session or fallback local query
   React.useEffect(() => {
-    let isMounted = true;
-    fetch('/api/auth')
-      .then((res) => res.json())
-      .then((data) => {
-        if (!isMounted) return;
-        if (data.success && data.user) {
-          setCurrentUser(data.user);
-        } else {
-          setCurrentUser(null);
+    if (session?.user) {
+      setCurrentUser(session.user as unknown as User);
+    } else if (authStatus === 'unauthenticated') {
+      // Check if session cookie exists or fetch initial user
+      fetch('/api/users')
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.success && data.users && data.users.length > 0) {
+            // Do not force login if demo mode is wanted, but respect NextAuth
+          }
+        })
+        .catch(() => {});
+    }
+  }, [session, authStatus]);
+
+  // Load settlements, stats, users, and platform accounts
+  const reloadData = React.useCallback(async (userToQuery?: User) => {
+    const user = userToQuery || currentUser;
+    if (!user) return;
+
+    try {
+      // Fetch stats
+      const statsRes = await fetch(`/api/stats?role=${user.role}&userId=${user.id}`);
+      const statsData = await statsRes.json();
+      if (statsData.success) {
+        setStats(statsData.stats);
+      }
+
+      // Fetch settlements
+      const settleRes = await fetch(`/api/settlements?role=${user.role}&userId=${user.id}`);
+      const settleData = await settleRes.json();
+      if (settleData.success) {
+        setSettlements(settleData.settlements);
+      }
+
+      // Fetch users if subadmin or admin
+      if (user.role === 'admin' || user.role === 'subadmin') {
+        const usersRes = await fetch(
+          `/api/users?requesterId=${user.id}${user.role === 'subadmin' ? `&subAdminId=${user.id}` : ''}`
+        );
+        const usersData = await usersRes.json();
+        if (usersData.success) {
+          setUserList(usersData.users);
         }
-        setLoadingUser(false);
-      })
-      .catch((err) => {
-        if (!isMounted) return;
-        console.error('Session error', err);
-        setCurrentUser(null);
-        setLoadingUser(false);
-      });
+      }
+
+      // Fetch platform accounts
+      const accRes = await fetch('/api/platform-accounts');
+      const accData = await accRes.json();
+      if (accData.success) {
+        setPlatformAccounts(accData.accounts);
+      }
+    } catch (err) {
+      console.error('Error reloading ledger data:', err);
+    }
+  }, [currentUser]);
+
+  React.useEffect(() => {
+    if (currentUser) {
+      reloadData();
+    }
+  }, [currentUser, reloadData]);
+
+  // Visual viewport keyboard inset handling
+  React.useEffect(() => {
+    const viewport = window.visualViewport;
+    if (!viewport) return;
+
+    const syncKeyboardInset = () => {
+      const inset = window.innerHeight - viewport.height - viewport.offsetTop;
+      document.documentElement.style.setProperty(
+        '--kb-inset',
+        inset > 120 ? `${Math.round(inset)}px` : '0px'
+      );
+    };
+
+    viewport.addEventListener('resize', syncKeyboardInset);
+    viewport.addEventListener('scroll', syncKeyboardInset);
+    syncKeyboardInset();
+
     return () => {
-      isMounted = false;
+      viewport.removeEventListener('resize', syncKeyboardInset);
+      viewport.removeEventListener('scroll', syncKeyboardInset);
     };
   }, []);
 
-  // Fetch settlements and statistics
-  const reloadData = React.useCallback(async () => {
-    if (!currentUser) return;
-    try {
-      const queryParams = new URLSearchParams();
-      queryParams.set('role', currentUser.role);
-      queryParams.set('userId', currentUser.id);
-      if (statusFilter !== 'all') queryParams.set('status', statusFilter);
-      if (typeFilter !== 'all') queryParams.set('type', typeFilter);
-      if (searchQuery.trim()) queryParams.set('search', searchQuery.trim());
-
-      const [settleRes, statsRes] = await Promise.all([
-        fetch(`/api/settlements?${queryParams.toString()}`),
-        fetch(`/api/stats?role=${currentUser.role}&userId=${currentUser.id}`)
-      ]);
-
-      const settleData = await settleRes.json();
-      const statsData = await statsRes.json();
-
-      if (settleData.success) setSettlements(settleData.settlements);
-      if (statsData.success) setStats(statsData.stats);
-
-      if (currentUser.role === 'subadmin') {
-        const usersRes = await fetch(`/api/users?subAdminId=${currentUser.id}&requesterId=${currentUser.id}`);
-        const uData = await usersRes.json();
-        if (uData.success) setUserList(uData.users);
-      } else if (currentUser.role === 'admin') {
-        const [usersRes, accRes] = await Promise.all([
-          fetch(`/api/users?requesterId=${currentUser.id}`),
-          fetch('/api/platform-accounts')
-        ]);
-        const uData = await usersRes.json();
-        const aData = await accRes.json();
-        if (uData.success) setUserList(uData.users);
-        if (aData.success) setPlatformAccounts(aData.accounts);
-      } else if (currentUser.role === 'merchant') {
-        const accRes = await fetch('/api/platform-accounts');
-        const aData = await accRes.json();
-        if (aData.success) setPlatformAccounts(aData.accounts);
-      }
-    } catch (err) {
-      console.error('Error reloading data', err);
-    }
-  }, [currentUser, statusFilter, typeFilter, searchQuery]);
-
+  // Scroll to top on tab change
   React.useEffect(() => {
-    if (!currentUser) return;
-    let isMounted = true;
-    const queryParams = new URLSearchParams();
-    queryParams.set('role', currentUser.role);
-    queryParams.set('userId', currentUser.id);
-    if (statusFilter !== 'all') queryParams.set('status', statusFilter);
-    if (typeFilter !== 'all') queryParams.set('type', typeFilter);
-    if (searchQuery.trim()) queryParams.set('search', searchQuery.trim());
+    window.scrollTo(0, 0);
+  }, [currentTab]);
 
-    Promise.all([
-      fetch(`/api/settlements?${queryParams.toString()}`).then((r) => r.json()),
-      fetch(`/api/stats?role=${currentUser.role}&userId=${currentUser.id}`).then((r) => r.json()),
-      currentUser.role === 'subadmin'
-        ? fetch(`/api/users?subAdminId=${currentUser.id}&requesterId=${currentUser.id}`).then((r) => r.json())
-        : currentUser.role === 'admin'
-        ? fetch(`/api/users?requesterId=${currentUser.id}`).then((r) => r.json())
-        : Promise.resolve({ success: false, users: [] }),
-      currentUser.role === 'admin' || currentUser.role === 'merchant'
-        ? fetch('/api/platform-accounts').then((r) => r.json())
-        : Promise.resolve({ success: false, accounts: [] })
-    ])
-      .then(([settleData, statsData, usersData, accData]) => {
-        if (!isMounted) return;
-        if (settleData.success) setSettlements(settleData.settlements);
-        if (statsData.success) setStats(statsData.stats);
-        if (usersData.success) setUserList(usersData.users);
-        if (accData.success) setPlatformAccounts(accData.accounts);
-        setLoadingData(false);
-      })
-      .catch((err) => {
-        if (!isMounted) return;
-        console.error('Error loading data', err);
-        setLoadingData(false);
-      });
-
-    return () => {
-      isMounted = false;
-    };
-  }, [currentUser, statusFilter, typeFilter, searchQuery]);
-
-  // Switch demo persona
-  const handleSwitchRole = async (targetRole: Role) => {
-    try {
-      const res = await fetch('/api/auth', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'switch-role', targetRole })
-      });
-      const data = await res.json();
-      if (data.success && data.user) {
-        setCurrentUser(data.user);
-        setCurrentTab('dashboard');
+  // Global hotkey: '/' to focus search
+  React.useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (
+        e.key === '/' &&
+        document.activeElement?.tagName !== 'INPUT' &&
+        document.activeElement?.tagName !== 'TEXTAREA'
+      ) {
+        e.preventDefault();
+        setCurrentTab('settlements');
+        setTimeout(() => searchInputRef.current?.focus(), 50);
       }
-    } catch (err) {
-      console.error('Switch error', err);
-    }
-  };
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
-  const handleLogout = async () => {
-    await fetch('/api/auth', { method: 'DELETE' });
-    setCurrentUser(null);
-  };
-
-  if (loadingUser) {
+  // Loading state
+  if (authStatus === 'loading') {
     return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center text-slate-400">
-        <div className="flex items-center gap-2">
-          <RefreshCw className="w-5 h-5 animate-spin text-emerald-400" />
-          <span className="text-sm font-medium">Loading SettleTrack Portal...</span>
+      <div className="min-h-screen bg-[#f7f7f4] flex flex-col items-center justify-center">
+        <div className="w-3 h-3 bg-[#f54e00] rounded-[2px] animate-ping mb-3" />
+        <div className="font-display text-[16px] text-[#26251e]">
+          Initializing SettleTrack Ledger...
         </div>
       </div>
     );
   }
 
+  // Not signed in -> Render AuthView
   if (!currentUser) {
-    return <AuthView onLoginSuccess={(u) => { setCurrentUser(u); setCurrentTab('dashboard'); }} />;
+    return (
+      <AuthView
+        onLoginSuccess={(user) => {
+          setCurrentUser(user);
+          reloadData(user);
+        }}
+      />
+    );
   }
 
-  // Count items requiring action
-  const pendingClearCount = settlements.filter(s => {
-    if (s.status !== 'pending') return false;
-    if (currentUser.role === 'subadmin') return s.recipientId === currentUser.id && s.type === 'merchant_to_subadmin';
-    if (currentUser.role === 'admin') return s.type === 'subadmin_to_admin' || s.type === 'merchant_to_subadmin';
-    return false;
-  }).length;
+  // Filtering settlements
+  const filteredSettlements = settlements.filter((s) => {
+    if (statusFilter !== 'all' && s.status !== statusFilter) return false;
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase().trim();
+      return (
+        s.id.toLowerCase().includes(q) ||
+        s.requesterName.toLowerCase().includes(q) ||
+        s.recipientName.toLowerCase().includes(q) ||
+        s.type.toLowerCase().includes(q) ||
+        (s.type === 'merchant_to_admin' && (q.includes('direct') || q.includes('platform'))) ||
+        (s.type === 'merchant_to_subadmin' && q.includes('agent')) ||
+        (s.clearing?.utrNumber && s.clearing.utrNumber.toLowerCase().includes(q)) ||
+        (s.payoutDetails.upiId && s.payoutDetails.upiId.toLowerCase().includes(q)) ||
+        (s.payoutDetails.accountNumber && s.payoutDetails.accountNumber.includes(q)) ||
+        s.amount.toString().includes(q)
+      );
+    }
+    return true;
+  });
 
-  const awaitingReviewCount = settlements.filter(s => {
-    if (s.status !== 'paid_pending_confirmation') return false;
-    if (currentUser.role === 'merchant') return s.requesterId === currentUser.id;
-    if (currentUser.role === 'subadmin') return s.type === 'subadmin_to_admin' && s.requesterId === currentUser.id;
-    if (currentUser.role === 'admin') return true;
-    return false;
-  }).length;
+  const handleClearClick = (s: Settlement) => {
+    setSelectedSettlementToClear(s);
+    setIsClearModalOpen(true);
+  };
+
+  const handleReviewClick = (s: Settlement) => {
+    setSelectedSettlementToReview(s);
+    setIsReviewModalOpen(true);
+  };
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col pb-20 md:pb-10">
+    <div className="min-h-screen bg-[#f7f7f4] text-[#26251e] pb-20 md:pb-16 font-sans w-full max-w-full overflow-x-hidden">
       {/* Top Navigation */}
       <Navbar
         currentUser={currentUser}
-        onLogout={handleLogout}
-        onSwitchRole={handleSwitchRole}
         currentTab={currentTab}
         onTabChange={setCurrentTab}
       />
 
-      {/* Main Container */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-5 sm:py-6 space-y-6">
-        {/* ========================================================= */}
-        {/* VIEW 1: DASHBOARD OVERVIEW */}
-        {/* ========================================================= */}
+      <main className="max-w-[1240px] mx-auto px-3 sm:px-6 pt-3 sm:pt-6 w-full max-w-full overflow-x-hidden">
+        {/* -------------------------------------------------------------
+            TAB: DASHBOARD (OVERVIEW)
+            ------------------------------------------------------------- */}
         {currentTab === 'dashboard' && (
-          <div className="space-y-6">
-            {/* Role Header Banner */}
-            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 sm:p-6 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div className="space-y-4 sm:space-y-6">
+            {/* Functional Header */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 sm:pb-4 border-b border-[#e6e5e0]">
               <div>
-                <div className="flex items-center gap-2 text-xs font-semibold text-emerald-600 dark:text-emerald-400">
-                  <span className="capitalize">{currentUser.role} Workspace</span>
-                  <span aria-hidden="true">·</span>
-                  <span>{currentUser.businessName || 'Settlement Portal'}</span>
-                </div>
-                <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900 dark:text-white mt-1">
-                  Welcome, {currentUser.name}
+                <h1 className="font-display text-[22px] sm:text-[30px] font-normal tracking-tight text-[#26251e] leading-snug">
+                  Settlement Operations
                 </h1>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-2xl">
-                  {currentUser.role === 'merchant' &&
-                    'Request settlements from your Agent for any date range with custom UPI or Bank payout. Review proof vouchers and confirm receipt once credited.'}
-                  {currentUser.role === 'subadmin' &&
-                    'Manage your affiliated merchants, clear their settlement requests with manual payment + screenshot voucher & UTR, or request platform clearance from the Admin.'}
-                  {currentUser.role === 'admin' &&
-                    'Platform Owner control: oversee platform collections, clear Sub-Admin settlement payouts, manage collection UPI/bank accounts, and administer passwords.'}
+                <p className="hidden sm:block text-[13px] text-[#5a5852] mt-0.5">
+                  Double-entry turnover clearing, UTR verification, and permanent ledger records.
                 </p>
               </div>
 
-              {/* Primary Actions based on Role */}
-              <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
-                {currentUser.role === 'merchant' && (
+              {/* Action Buttons in Hero */}
+              <div className="flex flex-wrap items-center gap-2">
+                {currentUser.role !== 'admin' && (
                   <button
+                    type="button"
                     onClick={() => setIsRaiseModalOpen(true)}
-                    className="w-full sm:w-auto px-4 py-2 text-xs font-bold text-slate-950 bg-emerald-400 hover:bg-emerald-300 rounded-xl transition-colors shadow-xs flex items-center justify-center gap-1.5"
+                    className="btn-cursor-primary text-[13px] h-9 px-3"
                   >
-                    <PlusCircle className="w-4 h-4" />
-                    <span>Raise Settlement Request</span>
+                    <Plus className="size-4" />
+                    <span>Raise Settlement</span>
                   </button>
                 )}
 
-                {currentUser.role === 'subadmin' && (
-                  <>
-                    <button
-                      onClick={() => setIsAddMerchantModalOpen(true)}
-                      className="px-3.5 py-2 text-xs font-semibold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-xl transition-colors flex items-center gap-1.5"
-                    >
-                      <Users className="w-3.5 h-3.5" />
-                      <span>Add Merchant</span>
-                    </button>
-                    <button
-                      onClick={() => setIsRaiseModalOpen(true)}
-                      className="px-4 py-2 text-xs font-bold text-slate-950 bg-emerald-400 hover:bg-emerald-300 rounded-xl transition-colors shadow-xs flex items-center gap-1.5"
-                    >
-                      <PlusCircle className="w-4 h-4" />
-                      <span>Request Payout from Admin</span>
-                    </button>
-                  </>
+                {(currentUser.role === 'admin' || currentUser.role === 'subadmin') && (
+                  <button
+                    type="button"
+                    onClick={() => setIsAddMerchantModalOpen(true)}
+                    className="btn-cursor-secondary text-[13px] h-9 px-3"
+                  >
+                    <Users className="size-4 text-[#807d72]" />
+                    <span>Onboard Merchant</span>
+                  </button>
                 )}
 
-                {currentUser.role === 'admin' && (
-                  <>
-                    <button
-                      onClick={() => setIsPlatformAccountsModalOpen(true)}
-                      className="px-3.5 py-2 text-xs font-semibold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-xl transition-colors flex items-center gap-1.5"
-                    >
-                      <Building2 className="w-3.5 h-3.5 text-blue-500" />
-                      <span>Collection Banks &amp; UPI</span>
-                    </button>
-                    <a
-                      href="/api/export?format=csv"
-                      className="px-3.5 py-2 text-xs font-semibold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-xl transition-colors flex items-center gap-1.5"
-                    >
-                      <Download className="w-3.5 h-3.5" />
-                      <span>Export CSV</span>
-                    </a>
-                  </>
-                )}
+                <a
+                  href={`/api/export?role=${currentUser.role}&userId=${currentUser.id}&format=csv`}
+                  download
+                  className="btn-cursor-secondary text-[13px] h-9 px-3"
+                >
+                  <Download className="size-4 text-[#807d72]" />
+                  <span>Export</span>
+                </a>
               </div>
             </div>
 
-            {/* Action Required Alert Cards */}
-            {awaitingReviewCount > 0 && (
-              <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-800/80 rounded-2xl p-4 sm:p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-                <div className="flex items-start gap-3">
-                  <div className="w-9 h-9 rounded-xl bg-amber-500/20 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0 mt-0.5">
-                    <Clock3 className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <h3 className="text-sm font-bold text-amber-950 dark:text-amber-200">
-                      {awaitingReviewCount} Settlement{awaitingReviewCount > 1 ? 's' : ''} Awaiting Your Verification &amp; Closure
-                    </h3>
-                    <p className="text-xs text-amber-800/90 dark:text-amber-300/80 mt-0.5">
-                      The payer has transferred the funds, attached payment screenshots, and recorded the bank UTR. Inspect the proof and confirm receipt to permanently reconcile.
-                    </p>
-                  </div>
+            {/* Metrics Grid - 2x2 on Mobile, 4-col on Desktop */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">
+              {/* Total Settled */}
+              <div className="rounded-[10px] sm:rounded-[12px] border border-[#e6e5e0] bg-[#ffffff] p-3 sm:p-5">
+                <div className="text-[10px] sm:text-[11px] font-mono uppercase tracking-wider text-[#807d72] truncate">
+                  Total Settled
                 </div>
-                <button
-                  onClick={() => {
-                    setStatusFilter('paid_pending_confirmation');
-                    setCurrentTab('settlements');
-                  }}
-                  className="px-3.5 py-1.5 text-xs font-bold bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-lg whitespace-nowrap transition-colors"
-                >
-                  Review Proofs Now →
-                </button>
-              </div>
-            )}
-
-            {pendingClearCount > 0 && (
-              <div className="bg-sky-50 dark:bg-sky-950/30 border border-sky-300 dark:border-sky-800/80 rounded-2xl p-4 sm:p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-                <div className="flex items-start gap-3">
-                  <div className="w-9 h-9 rounded-xl bg-sky-500/20 text-sky-600 dark:text-sky-400 flex items-center justify-center shrink-0 mt-0.5">
-                    <ArrowUpRight className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <h3 className="text-sm font-bold text-sky-950 dark:text-sky-200">
-                      {pendingClearCount} Pending Settlement Request{pendingClearCount > 1 ? 's' : ''} to Clear
-                    </h3>
-                    <p className="text-xs text-sky-800/90 dark:text-sky-300/80 mt-0.5">
-                      Pay manually to requested UPI / Bank accounts, attach screenshot proof, enter UTR number, and mark cleared.
-                    </p>
-                  </div>
-                </div>
-                <button
-                  onClick={() => {
-                    setStatusFilter('pending');
-                    setCurrentTab('settlements');
-                  }}
-                  className="px-3.5 py-1.5 text-xs font-bold bg-sky-500 hover:bg-sky-400 text-slate-950 rounded-lg whitespace-nowrap transition-colors"
-                >
-                  Clear Settlements →
-                </button>
-              </div>
-            )}
-
-            {/* Financial KPI Summary Cards */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-              {/* Metric 1: Settled Volume */}
-              <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 shadow-xs">
-                <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 block uppercase tracking-wider">
-                  Total Reconciled
-                </span>
-                <div className="text-xl sm:text-2xl font-bold font-mono text-emerald-600 dark:text-emerald-400 tabular-nums mt-1">
+                <div className="font-mono text-[18px] sm:text-[24px] font-medium text-[#26251e] tracking-tight mt-1 sm:mt-1.5 truncate">
                   ₹{(stats?.totalSettledAmount || 0).toLocaleString('en-IN')}
                 </div>
-                <div className="text-[11px] text-slate-500 mt-1 flex items-center gap-1">
-                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
-                  <span>{stats?.totalCompletedCount || 0} completed records</span>
+                <div className="text-[11px] text-[#5a5852] mt-0.5 flex items-center gap-1 font-mono">
+                  <span className="font-semibold text-[#1f8a65]">{stats?.totalCompletedCount || 0}</span>
+                  <span className="text-[10px]">closed</span>
                 </div>
               </div>
 
-              {/* Metric 2: Pending Clearance */}
-              <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 shadow-xs">
-                <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 block uppercase tracking-wider">
-                  Pending Volume
-                </span>
-                <div className="text-xl sm:text-2xl font-bold font-mono text-slate-900 dark:text-white tabular-nums mt-1">
+              {/* Pending Payouts */}
+              <div className="rounded-[10px] sm:rounded-[12px] border border-[#e6e5e0] bg-[#ffffff] p-3 sm:p-5">
+                <div className="text-[10px] sm:text-[11px] font-mono uppercase tracking-wider text-[#807d72] truncate">
+                  Pending Payouts
+                </div>
+                <div className="font-mono text-[18px] sm:text-[24px] font-medium text-[#26251e] tracking-tight mt-1 sm:mt-1.5 truncate">
                   ₹{(stats?.totalPendingAmount || 0).toLocaleString('en-IN')}
                 </div>
-                <div className="text-[11px] text-slate-500 mt-1 flex items-center gap-1">
-                  <Clock3 className="w-3.5 h-3.5 text-sky-500" />
-                  <span>{stats?.totalPendingCount || 0} requests awaiting pay</span>
+                <div className="text-[11px] text-[#5a5852] mt-0.5 flex items-center gap-1 font-mono">
+                  <span className="font-semibold text-[#f54e00]">{stats?.totalPendingCount || 0}</span>
+                  <span className="text-[10px]">awaiting</span>
                 </div>
               </div>
 
-              {/* Metric 3: Awaiting Review */}
-              <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 shadow-xs">
-                <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 block uppercase tracking-wider">
-                  Proof Verification
-                </span>
-                <div className="text-xl sm:text-2xl font-bold font-mono text-amber-600 dark:text-amber-400 tabular-nums mt-1">
+              {/* Awaiting Review */}
+              <div className="rounded-[10px] sm:rounded-[12px] border border-[#e6e5e0] bg-[#ffffff] p-3 sm:p-5">
+                <div className="text-[10px] sm:text-[11px] font-mono uppercase tracking-wider text-[#807d72] truncate">
+                  Verification
+                </div>
+                <div className="font-mono text-[18px] sm:text-[24px] font-medium text-[#26251e] tracking-tight mt-1 sm:mt-1.5 truncate">
                   {stats?.totalAwaitingReviewCount || 0}
                 </div>
-                <div className="text-[11px] text-slate-500 mt-1">
-                  Paid with UTR · Pending Payee confirmation
+                <div className="text-[10px] sm:text-[11px] text-[#5a5852] mt-0.5 truncate">
+                  With UTR proof
                 </div>
               </div>
 
-              {/* Metric 4: Role Counts */}
-              <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 shadow-xs">
-                <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 block uppercase tracking-wider">
-                  {currentUser.role === 'admin' ? 'Network Entities' : currentUser.role === 'subadmin' ? 'My Merchants' : 'Assigned Agent'}
-                </span>
-                <div className="text-xl sm:text-2xl font-bold font-mono text-slate-900 dark:text-white tabular-nums mt-1">
-                  {currentUser.role === 'admin'
-                    ? `${stats?.merchantsCount || 0} Merch / ${stats?.subAdminsCount || 0} Agents`
-                    : currentUser.role === 'subadmin'
-                    ? `${stats?.merchantsCount || userList.length} Merchants`
-                    : currentUser.subAdminName || 'Rahul Deshmukh'}
+              {/* Discrepancies */}
+              <div className="rounded-[10px] sm:rounded-[12px] border border-[#e6e5e0] bg-[#ffffff] p-3 sm:p-5">
+                <div className="text-[10px] sm:text-[11px] font-mono uppercase tracking-wider text-[#807d72] truncate">
+                  Disputes
                 </div>
-                <div className="text-[11px] text-slate-500 mt-1">
-                  {currentUser.role === 'merchant' ? 'Referral Agent' : 'Active accounts'}
+                <div className="font-mono text-[18px] sm:text-[24px] font-medium text-[#cf2d56] tracking-tight mt-1 sm:mt-1.5 truncate">
+                  {stats?.totalDisputedCount || 0}
+                </div>
+                <div className="text-[10px] sm:text-[11px] text-[#5a5852] mt-0.5 truncate">
+                  Flagged UTRs
                 </div>
               </div>
             </div>
 
             {/* Recent Settlements List */}
-            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 sm:p-6 shadow-xs space-y-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h2 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white">
-                    Recent Settlements
-                  </h2>
-                  <p className="text-xs text-slate-500 dark:text-slate-400">
-                    Live settlement record feed with real-time audit logs
-                  </p>
+            <div className="space-y-2.5">
+              <div className="flex items-center justify-between pb-1.5">
+                <div className="flex items-center gap-2">
+                  <h3 className="font-display text-[16px] sm:text-[18px] font-normal text-[#26251e]">
+                    Recent Ledger Entries
+                  </h3>
+                  <span className="font-mono text-[11px] text-[#807d72]">
+                    ({settlements.length})
+                  </span>
                 </div>
                 <button
+                  type="button"
                   onClick={() => setCurrentTab('settlements')}
-                  className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 hover:underline"
+                  className="text-[12px] font-medium text-[#f54e00] hover:underline flex items-center gap-0.5"
                 >
-                  View Full Ledger →
+                  <span>View All</span>
+                  <ChevronRight className="size-3.5" />
                 </button>
               </div>
 
               {settlements.length === 0 ? (
-                <div className="p-8 text-center rounded-xl border border-dashed border-slate-200 dark:border-slate-800 text-xs text-slate-400">
-                  No settlements recorded yet. Click &quot;Raise Settlement Request&quot; to begin.
+                <div className="p-8 sm:p-12 text-center rounded-[12px] border border-[#e6e5e0] bg-[#ffffff] text-[13px] text-[#807d72]">
+                  No settlements recorded yet.
                 </div>
               ) : (
-                <div className="grid grid-cols-1 gap-3">
-                  {settlements.slice(0, 5).map((settlement) => (
+                <div className="grid grid-cols-1 gap-2.5 sm:gap-3">
+                  {settlements.slice(0, 5).map((s) => (
                     <SettlementCard
-                      key={settlement.id}
-                      settlement={settlement}
+                      key={s.id}
+                      settlement={s}
                       currentUser={currentUser}
-                      onClear={(s) => {
-                        setSelectedSettlementToClear(s);
-                        setIsClearModalOpen(true);
-                      }}
-                      onReview={(s) => {
-                        setSelectedSettlementToReview(s);
-                        setIsReviewModalOpen(true);
-                      }}
-                      onViewDetails={(s) => {
-                        setSelectedSettlementToReview(s);
-                        setIsReviewModalOpen(true);
-                      }}
+                      onClear={handleClearClick}
+                      onReview={handleReviewClick}
+                      onViewDetails={handleReviewClick}
                     />
                   ))}
                 </div>
@@ -487,128 +401,88 @@ export default function Home() {
           </div>
         )}
 
-        {/* ========================================================= */}
-        {/* VIEW 2: SETTLEMENTS LEDGER (ALL RECORDS WITH FILTERS) */}
-        {/* ========================================================= */}
+        {/* -------------------------------------------------------------
+            TAB: SETTLEMENTS LEDGER
+            ------------------------------------------------------------- */}
         {currentTab === 'settlements' && (
-          <div className="space-y-4 sm:space-y-5">
-            {/* Header & Controls */}
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-2 border-b border-slate-200 dark:border-slate-800">
+          <div className="space-y-5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-[#e6e5e0]">
               <div>
-                <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900 dark:text-white">
-                  Settlements Permanent Ledger
+                <h1 className="font-display text-[26px] font-normal tracking-tight text-[#26251e]">
+                  Permanent Settlement Ledger
                 </h1>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                  Complete audit records of settlement requests, UTR submissions, proofs, and receipts
+                <p className="text-[13px] text-[#5a5852]">
+                  Search and verify all transactions by UTR, ID, merchant name, or amount.
                 </p>
               </div>
 
-              <div className="flex items-center gap-2">
-                <a
-                  href={`/api/export?role=${currentUser.role}&userId=${currentUser.id}&format=csv`}
-                  className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 flex items-center gap-1.5 transition-colors"
-                >
-                  <Download className="w-3.5 h-3.5" />
-                  <span>Download CSV</span>
-                </a>
+              {currentUser.role !== 'admin' && (
                 <button
-                  onClick={reloadData}
-                  className="p-1.5 text-slate-400 hover:text-slate-200 hover:bg-slate-800 rounded-lg"
-                  title="Refresh"
+                  type="button"
+                  onClick={() => setIsRaiseModalOpen(true)}
+                  className="btn-cursor-primary self-start sm:self-auto"
                 >
-                  <RefreshCw className="w-4 h-4" />
+                  <Plus className="size-4" />
+                  <span>Raise Settlement</span>
                 </button>
-              </div>
+              )}
             </div>
 
-            {/* Search and Status Tabs */}
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
-              {/* Search Bar */}
-              <div className="relative flex-1 max-w-md">
-                <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
+            {/* Filter & Search Bar */}
+            <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+              {/* Status Pills */}
+              <div className="flex flex-wrap items-center gap-1.5">
+                {statusFilters.map((flt) => {
+                  const active = statusFilter === flt.key;
+                  return (
+                    <button
+                      key={flt.key}
+                      type="button"
+                      onClick={() => setStatusFilter(flt.key)}
+                      className={`px-3 py-1.5 rounded-[6px] text-[12px] font-medium transition-colors ${
+                        active
+                          ? 'bg-[#26251e] text-white'
+                          : 'bg-[#ffffff] text-[#5a5852] border border-[#e6e5e0] hover:border-[#cfcdc4]'
+                      }`}
+                    >
+                      {flt.label}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Search Bar with '/' hotkey badge */}
+              <div className="relative w-full md:w-80">
+                <Search className="size-4 absolute left-3 top-1/2 -translate-y-1/2 text-[#807d72]" />
                 <input
+                  ref={searchInputRef}
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search by Settlement ID, UTR, Merchant, or Amount..."
-                  className="w-full text-xs rounded-xl border border-slate-300 dark:border-slate-800 bg-white dark:bg-slate-900 pl-9 pr-3 py-2 text-slate-900 dark:text-white outline-hidden focus:border-emerald-500"
+                  placeholder="Search UTR, merchant, amount... (Press /)"
+                  className="w-full h-9 pl-9 pr-8 text-[12px] font-mono rounded-[8px] border border-[#e6e5e0] bg-[#ffffff] text-[#26251e] placeholder:text-[#a09c92] focus:outline-none focus:border-[#f54e00]"
                 />
-              </div>
-
-              {/* Status Tabs */}
-              <div className="flex items-center gap-1 p-1 bg-slate-100 dark:bg-slate-900 rounded-xl overflow-x-auto">
-                <button
-                  onClick={() => setStatusFilter('all')}
-                  className={`px-3 py-1.5 text-xs font-medium rounded-lg whitespace-nowrap transition-colors ${
-                    statusFilter === 'all'
-                      ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-2xs font-semibold'
-                      : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
-                  }`}
-                >
-                  All ({settlements.length})
-                </button>
-                <button
-                  onClick={() => setStatusFilter('pending')}
-                  className={`px-3 py-1.5 text-xs font-medium rounded-lg whitespace-nowrap transition-colors ${
-                    statusFilter === 'pending'
-                      ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-2xs font-semibold'
-                      : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
-                  }`}
-                >
-                  Pending Clear
-                </button>
-                <button
-                  onClick={() => setStatusFilter('paid_pending_confirmation')}
-                  className={`px-3 py-1.5 text-xs font-medium rounded-lg whitespace-nowrap transition-colors ${
-                    statusFilter === 'paid_pending_confirmation'
-                      ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-2xs font-semibold'
-                      : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
-                  }`}
-                >
-                  Awaiting Review
-                </button>
-                <button
-                  onClick={() => setStatusFilter('completed')}
-                  className={`px-3 py-1.5 text-xs font-medium rounded-lg whitespace-nowrap transition-colors ${
-                    statusFilter === 'completed'
-                      ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-2xs font-semibold'
-                      : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
-                  }`}
-                >
-                  Reconciled / Closed
-                </button>
+                <kbd className="absolute right-2.5 top-1/2 -translate-y-1/2 hidden sm:inline-block px-1.5 py-0.5 rounded-[4px] border border-[#e6e5e0] bg-[#fafaf7] text-[10px] font-mono text-[#807d72]">
+                  /
+                </kbd>
               </div>
             </div>
 
-            {/* List */}
-            {settlements.length === 0 ? (
-              <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-10 text-center space-y-2">
-                <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">
-                  No matching settlements found
-                </p>
-                <p className="text-xs text-slate-400">
-                  Try adjusting your filters or search terms.
-                </p>
+            {/* Ledger Results */}
+            {filteredSettlements.length === 0 ? (
+              <div className="p-12 text-center rounded-[12px] border border-[#e6e5e0] bg-[#ffffff] text-[13px] text-[#807d72]">
+                No settlement records match your search or filter.
               </div>
             ) : (
-              <div className="space-y-3">
-                {settlements.map((settlement) => (
+              <div className="grid grid-cols-1 gap-3">
+                {filteredSettlements.map((s) => (
                   <SettlementCard
-                    key={settlement.id}
-                    settlement={settlement}
+                    key={s.id}
+                    settlement={s}
                     currentUser={currentUser}
-                    onClear={(s) => {
-                      setSelectedSettlementToClear(s);
-                      setIsClearModalOpen(true);
-                    }}
-                    onReview={(s) => {
-                      setSelectedSettlementToReview(s);
-                      setIsReviewModalOpen(true);
-                    }}
-                    onViewDetails={(s) => {
-                      setSelectedSettlementToReview(s);
-                      setIsReviewModalOpen(true);
-                    }}
+                    onClear={handleClearClick}
+                    onReview={handleReviewClick}
+                    onViewDetails={handleReviewClick}
                   />
                 ))}
               </div>
@@ -616,333 +490,286 @@ export default function Home() {
           </div>
         )}
 
-        {/* ========================================================= */}
-        {/* VIEW 3: MY MERCHANTS (FOR SUB-ADMIN & ADMIN) */}
-        {/* ========================================================= */}
+        {/* -------------------------------------------------------------
+            TAB: MERCHANTS & DIRECTORY (ADMIN / SUBADMIN)
+            ------------------------------------------------------------- */}
         {(currentTab === 'merchants' || currentTab === 'all-users') && (
           <div className="space-y-5">
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-2 border-b border-slate-200 dark:border-slate-800">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-[#e6e5e0]">
               <div>
-                <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900 dark:text-white">
-                  {currentUser.role === 'admin' ? 'All Platform Users & Agents' : 'My Affiliated Merchants'}
+                <h1 className="font-display text-[26px] font-normal tracking-tight text-[#26251e]">
+                  {currentUser.role === 'admin' ? 'Organizations & Merchants' : 'Assigned Store Merchants'}
                 </h1>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                  Create merchant accounts, manage credentials, and reset merchant passwords
+                <p className="text-[13px] text-[#5a5852]">
+                  Manage merchant login credentials, assigned agents, and direct password resets.
                 </p>
               </div>
 
-              {(currentUser.role === 'subadmin' || currentUser.role === 'admin') && (
+              <button
+                type="button"
+                onClick={() => setIsAddMerchantModalOpen(true)}
+                className="btn-cursor-primary self-start sm:self-auto"
+              >
+                <Plus className="size-4" />
+                <span>Onboard Merchant</span>
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {userList.map((u) => {
+                const isMerchant = u.role === 'merchant';
+                return (
+                  <div
+                    key={u.id}
+                    className="rounded-[12px] border border-[#e6e5e0] bg-[#ffffff] p-5 flex flex-col justify-between"
+                  >
+                    <div>
+                      <div className="flex items-center justify-between gap-2 pb-2.5 border-b border-[#efeee8]">
+                        <span className="font-semibold text-[14px] text-[#26251e] truncate">{u.name}</span>
+                        <span className="text-[10px] font-mono uppercase px-2 py-0.5 rounded-full bg-[#e6e5e0] text-[#5a5852]">
+                          {u.role}
+                        </span>
+                      </div>
+
+                      <div className="py-3 space-y-1.5 text-[12px]">
+                        {u.businessName && (
+                          <div className="text-[#26251e] font-medium">{u.businessName}</div>
+                        )}
+                        <div className="font-mono text-[11px] text-[#807d72]">{u.email}</div>
+                        {u.phone && <div className="font-mono text-[11px] text-[#807d72]">{u.phone}</div>}
+                        {u.defaultUpiId && (
+                          <div className="font-mono text-[11px] text-[#f54e00]">UPI: {u.defaultUpiId}</div>
+                        )}
+                        {u.subAdminName && (
+                          <div className="text-[11px] text-[#807d72]">Agent: {u.subAdminName}</div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="pt-3 border-t border-[#efeee8] flex items-center justify-between gap-2">
+                      <span className="text-[10px] font-mono text-[#a09c92]">ID: {u.id}</span>
+                      {isMerchant && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedUserToReset(u);
+                            setIsResetPasswordModalOpen(true);
+                          }}
+                          className="btn-cursor-secondary text-[11px] h-7 px-2.5"
+                        >
+                          <KeyRound className="size-3 text-[#f54e00]" />
+                          <span>Reset Password</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* -------------------------------------------------------------
+            TAB: AGENT CONTACT (FOR MERCHANTS)
+            ------------------------------------------------------------- */}
+        {currentTab === 'agent-info' && (
+          <div className="max-w-xl mx-auto space-y-5">
+            <div>
+              <h1 className="font-display text-[26px] font-normal tracking-tight text-[#26251e]">
+                Assigned Clearing Agent
+              </h1>
+              <p className="text-[13px] text-[#5a5852]">
+                Your dedicated sub-admin responsible for reviewing and clearing your daily turnover payouts.
+              </p>
+            </div>
+
+            <div className="rounded-[12px] border border-[#e6e5e0] bg-[#ffffff] p-6 space-y-4">
+              <div className="flex items-center gap-3 pb-3 border-b border-[#efeee8]">
+                <div className="w-10 h-10 rounded-full bg-[#9fbbe0]/30 text-[#26251e] flex items-center justify-center font-bold">
+                  {currentUser.subAdminName ? currentUser.subAdminName.charAt(0) : 'A'}
+                </div>
+                <div>
+                  <div className="font-semibold text-[15px] text-[#26251e]">
+                    {currentUser.subAdminName || 'Platform Clearing Desk'}
+                  </div>
+                  <div className="text-[11px] text-[#807d72] uppercase font-mono">
+                    Authorized Settlement Agent
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-2 text-[12px]">
+                <div className="p-3 rounded-[8px] border border-[#e6e5e0] bg-[#fafaf7] flex justify-between">
+                  <span className="text-[#807d72]">Agent ID:</span>
+                  <span className="font-mono text-[#26251e]">{currentUser.subAdminId || 'HQ-DESK-01'}</span>
+                </div>
+                <div className="p-3 rounded-[8px] border border-[#e6e5e0] bg-[#fafaf7] flex justify-between">
+                  <span className="text-[#807d72]">Clearing Window:</span>
+                  <span className="font-medium text-[#26251e]">Daily 09:00 - 22:00 IST</span>
+                </div>
+                <div className="p-3 rounded-[8px] border border-[#e6e5e0] bg-[#fafaf7] flex justify-between">
+                  <span className="text-[#807d72]">Settlement Payout Channels:</span>
+                  <span className="font-medium text-[#1f8a65]">Instant IMPS &middot; RTGS</span>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setIsRaiseModalOpen(true)}
+                className="w-full btn-cursor-primary"
+              >
+                <span>Raise Settlement to {currentUser.subAdminName || 'Agent'}</span>
+                <ArrowUpRight className="size-4" />
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* -------------------------------------------------------------
+            TAB: COLLECTION ACCOUNTS (ADMIN / SUBADMIN)
+            ------------------------------------------------------------- */}
+        {currentTab === 'accounts' && (
+          <div className="space-y-5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-[#e6e5e0]">
+              <div>
+                <h1 className="font-display text-[26px] font-normal tracking-tight text-[#26251e]">
+                  Platform Collection Accounts
+                </h1>
+                <p className="text-[13px] text-[#5a5852]">
+                  Active collection bank accounts and UPI IDs for merchant turnover deposits.
+                </p>
+              </div>
+
+              {currentUser.role === 'admin' && (
                 <button
-                  onClick={() => setIsAddMerchantModalOpen(true)}
-                  className="px-4 py-2 text-xs font-bold text-slate-950 bg-emerald-400 hover:bg-emerald-300 rounded-xl transition-colors shadow-xs flex items-center gap-1.5"
+                  type="button"
+                  onClick={() => setIsPlatformAccountsModalOpen(true)}
+                  className="btn-cursor-primary self-start sm:self-auto"
                 >
-                  <PlusCircle className="w-4 h-4" />
-                  <span>Add New Merchant</span>
+                  <Plus className="size-4" />
+                  <span>Configure Accounts</span>
                 </button>
               )}
             </div>
 
-            {/* Merchant Cards Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
-              {userList.map((usr) => (
-                <div
-                  key={usr.id}
-                  className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xs flex flex-col justify-between space-y-3"
-                >
-                  <div>
-                    <div className="flex items-start justify-between">
-                      <div>
-                        <span className="text-[10px] font-mono text-slate-400 uppercase">
-                          {usr.role} · ID: {usr.id}
-                        </span>
-                        <h3 className="text-base font-bold text-slate-900 dark:text-white mt-0.5">
-                          {usr.name}
-                        </h3>
-                        <div className="text-xs text-slate-500 font-medium">
-                          {usr.businessName || 'Merchant'}
-                        </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {platformAccounts.map((acc) => {
+                const isUpi = acc.type === 'upi';
+                return (
+                  <div
+                    key={acc.id}
+                    className="rounded-[12px] border border-[#e6e5e0] bg-[#ffffff] p-5 space-y-3"
+                  >
+                    <div className="flex items-center justify-between pb-2 border-b border-[#efeee8]">
+                      <div className="flex items-center gap-2">
+                        {isUpi ? (
+                          <Smartphone className="size-4 text-[#f54e00]" />
+                        ) : (
+                          <Building2 className="size-4 text-[#807d72]" />
+                        )}
+                        <span className="font-semibold text-[13px] text-[#26251e] truncate">{acc.title}</span>
                       </div>
-                      <span className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 rounded">
-                        Active
+                      <span className="text-[10px] font-mono uppercase px-2 py-0.5 rounded-full bg-[#e6e5e0] text-[#5a5852]">
+                        {acc.type}
                       </span>
                     </div>
 
-                    <div className="mt-3 p-2.5 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-100 dark:border-slate-800 text-xs space-y-1 font-mono">
-                      <div className="flex justify-between">
-                        <span className="text-slate-400 font-sans">Login ID:</span>
-                        <span className="text-slate-900 dark:text-slate-100 font-semibold truncate max-w-[170px]">{usr.email}</span>
-                      </div>
-                      {usr.password && (
-                        <div className="flex justify-between">
-                          <span className="text-slate-400 font-sans">Password:</span>
-                          <span className="text-emerald-600 dark:text-emerald-400 font-bold">{usr.password}</span>
-                        </div>
-                      )}
-                      {usr.defaultUpiId && (
-                        <div className="flex justify-between">
-                          <span className="text-slate-400 font-sans">Default UPI:</span>
-                          <span className="text-slate-700 dark:text-slate-300 truncate max-w-[170px]">{usr.defaultUpiId}</span>
-                        </div>
-                      )}
-                      {usr.phone && (
-                        <div className="flex justify-between">
-                          <span className="text-slate-400 font-sans">Phone:</span>
-                          <span className="text-slate-700 dark:text-slate-300 font-sans">{usr.phone}</span>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Actions: Reset Password */}
-                  <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
-                    <span className="text-[11px] text-slate-400">
-                      Created {new Date(usr.createdAt).toLocaleDateString()}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSelectedUserToReset(usr);
-                        setIsResetPasswordModalOpen(true);
-                      }}
-                      className="px-2.5 py-1 text-xs font-semibold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg flex items-center gap-1 transition-colors"
-                    >
-                      <KeyRound className="w-3 h-3 text-amber-500" />
-                      <span>Reset Password</span>
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* ========================================================= */}
-        {/* VIEW 4: AGENT & PLATFORM BANK INFO (FOR MERCHANT) */}
-        {/* ========================================================= */}
-        {currentTab === 'agent-info' && (
-          <div className="space-y-5 max-w-3xl">
-            <div className="pb-2 border-b border-slate-200 dark:border-slate-800">
-              <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900 dark:text-white">
-                Agent &amp; Platform Banking Information
-              </h1>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                Details of your referral Sub-Admin and Platform collection accounts
-              </p>
-            </div>
-
-            {/* My Sub-Admin card */}
-            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-xs space-y-3">
-              <h2 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                <Users className="w-4 h-4 text-emerald-500" />
-                <span>Your Assigned Referral Agent (Sub-Admin)</span>
-              </h2>
-              <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-100 dark:border-slate-800 text-xs space-y-1.5">
-                <div className="flex justify-between">
-                  <span className="text-slate-500">Agent Name:</span>
-                  <span className="font-semibold text-slate-900 dark:text-white">{currentUser.subAdminName || 'Rahul Deshmukh'}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-500">Agency:</span>
-                  <span className="font-medium text-slate-700 dark:text-slate-300">RD Referral Agency &amp; Settlements</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-500">Settlement Role:</span>
-                  <span className="font-medium text-emerald-600 dark:text-emerald-400">Clears your settlement requests &amp; uploads UTR proof</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Platform Collection Accounts */}
-            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-xs space-y-3">
-              <h2 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                <Building2 className="w-4 h-4 text-blue-500" />
-                <span>Official Platform Collection Accounts (Admin HQ)</span>
-              </h2>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                Where platform money is collected by Admin via UPI and Bank accounts:
-              </p>
-
-              <div className="space-y-2.5">
-                {platformAccounts.map((acc) => (
-                  <div key={acc.id} className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-800 text-xs font-mono space-y-1">
-                    <div className="flex items-center justify-between font-sans font-bold text-slate-900 dark:text-white">
-                      <span>{acc.title}</span>
-                      <span className="text-[10px] text-emerald-500 uppercase">{acc.type}</span>
-                    </div>
-                    {acc.type === 'upi' ? (
-                      <div className="text-emerald-600 dark:text-emerald-400 font-bold">{acc.upiId}</div>
-                    ) : (
-                      <div className="text-slate-700 dark:text-slate-300">
-                        {acc.bankName} · A/C: {acc.accountNumber} · IFSC: {acc.ifscCode}
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* ========================================================= */}
-        {/* VIEW 5: PLATFORM COLLECTION ACCOUNTS (FOR ADMIN) */}
-        {/* ========================================================= */}
-        {currentTab === 'accounts' && (
-          <div className="space-y-5">
-            <div className="flex items-center justify-between pb-2 border-b border-slate-200 dark:border-slate-800">
-              <div>
-                <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900 dark:text-white">
-                  Platform Collection Bank Accounts &amp; UPI
-                </h1>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                  Official bank accounts and UPI IDs where platform deposits are collected
-                </p>
-              </div>
-              <button
-                onClick={() => setIsPlatformAccountsModalOpen(true)}
-                className="px-4 py-2 text-xs font-bold text-slate-950 bg-emerald-400 hover:bg-emerald-300 rounded-xl transition-colors shadow-xs flex items-center gap-1.5"
-              >
-                <PlusCircle className="w-4 h-4" />
-                <span>Manage Accounts</span>
-              </button>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {platformAccounts.map((acc) => (
-                <div key={acc.id} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-xs space-y-2.5">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      {acc.type === 'upi' ? (
-                        <Smartphone className="w-4 h-4 text-emerald-500" />
+                    <div className="space-y-1 font-mono text-[12px]">
+                      <div className="text-[11px] font-sans text-[#807d72]">{acc.accountHolder}</div>
+                      {isUpi ? (
+                        <div className="text-[14px] font-bold text-[#f54e00]">{acc.upiId}</div>
                       ) : (
-                        <Building2 className="w-4 h-4 text-blue-500" />
+                        <div className="text-[#26251e]">
+                          {acc.bankName} &middot; A/C {acc.accountNumber}
+                          <div className="text-[#807d72] text-[11px]">IFSC: {acc.ifscCode}</div>
+                        </div>
                       )}
-                      <h3 className="font-bold text-sm text-slate-900 dark:text-white">{acc.title}</h3>
                     </div>
-                    <span className="text-[11px] font-semibold text-emerald-500 uppercase">{acc.type}</span>
                   </div>
-
-                  <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-100 dark:border-slate-800 text-xs font-mono space-y-1">
-                    <div className="text-slate-500 font-sans">Entity: {acc.accountHolder}</div>
-                    {acc.type === 'upi' ? (
-                      <div className="text-emerald-500 font-bold">{acc.upiId}</div>
-                    ) : (
-                      <>
-                        <div className="text-slate-800 dark:text-slate-200">Bank: {acc.bankName}</div>
-                        <div className="text-slate-800 dark:text-slate-200 font-bold">A/C: {acc.accountNumber}</div>
-                        <div className="text-slate-500">IFSC: {acc.ifscCode}</div>
-                      </>
-                    )}
-                  </div>
-                  {acc.notes && <p className="text-[11px] text-slate-400">{acc.notes}</p>}
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         )}
 
-        {/* ========================================================= */}
-        {/* VIEW 6: PROFILE & PERMANENT RECORDS BACKUP */}
-        {/* ========================================================= */}
+        {/* -------------------------------------------------------------
+            TAB: PROFILE & SETTINGS
+            ------------------------------------------------------------- */}
         {currentTab === 'profile' && (
-          <div className="space-y-5 max-w-2xl">
-            <div className="pb-2 border-b border-slate-200 dark:border-slate-800">
-              <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900 dark:text-white">
-                Account &amp; Permanent Ledger Records
+          <div className="max-w-xl mx-auto space-y-5">
+            <div>
+              <h1 className="font-display text-[26px] font-normal tracking-tight text-[#26251e]">
+                Account &amp; Settlement Profile
               </h1>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                Session info, credentials policy, and permanent ledger data exports
+              <p className="text-[13px] text-[#5a5852]">
+                Your registered credentials and settlement bank account details.
               </p>
             </div>
 
-            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-xs space-y-3">
-              <h2 className="text-sm font-bold text-slate-900 dark:text-white">Account Details</h2>
-              <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-100 dark:border-slate-800 text-xs space-y-2">
-                <div className="flex justify-between">
-                  <span className="text-slate-500">Name:</span>
-                  <span className="font-semibold text-slate-900 dark:text-white">{currentUser.name}</span>
+            <div className="rounded-[12px] border border-[#e6e5e0] bg-[#ffffff] p-6 space-y-4">
+              <div className="flex items-center justify-between pb-3 border-b border-[#efeee8]">
+                <div>
+                  <div className="font-semibold text-[16px] text-[#26251e]">{currentUser.name}</div>
+                  <div className="font-mono text-[12px] text-[#807d72]">{currentUser.email}</div>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-500">Role:</span>
-                  <span className="font-semibold capitalize text-emerald-600 dark:text-emerald-400">{currentUser.role}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-500">Email / Login ID:</span>
-                  <span className="font-mono text-slate-900 dark:text-white">{currentUser.email}</span>
-                </div>
+                <span className="text-[11px] font-mono uppercase px-2.5 py-1 rounded-full bg-[#e6e5e0] text-[#26251e] font-semibold">
+                  {currentUser.role}
+                </span>
+              </div>
+
+              <div className="space-y-2 text-[12px]">
                 {currentUser.businessName && (
-                  <div className="flex justify-between">
-                    <span className="text-slate-500">Business / Store:</span>
-                    <span className="text-slate-900 dark:text-white">{currentUser.businessName}</span>
+                  <div className="p-3 rounded-[8px] border border-[#e6e5e0] bg-[#fafaf7] flex justify-between">
+                    <span className="text-[#807d72]">Registered Business:</span>
+                    <span className="font-medium text-[#26251e]">{currentUser.businessName}</span>
+                  </div>
+                )}
+                {currentUser.phone && (
+                  <div className="p-3 rounded-[8px] border border-[#e6e5e0] bg-[#fafaf7] flex justify-between">
+                    <span className="text-[#807d72]">Contact Mobile:</span>
+                    <span className="font-mono text-[#26251e]">{currentUser.phone}</span>
                   </div>
                 )}
                 {currentUser.defaultUpiId && (
-                  <div className="flex justify-between">
-                    <span className="text-slate-500">Default UPI:</span>
-                    <span className="font-mono text-slate-900 dark:text-white">{currentUser.defaultUpiId}</span>
+                  <div className="p-3 rounded-[8px] border border-[#e6e5e0] bg-[#fafaf7] flex justify-between">
+                    <span className="text-[#807d72]">Default Settlement UPI:</span>
+                    <span className="font-mono font-semibold text-[#f54e00]">{currentUser.defaultUpiId}</span>
+                  </div>
+                )}
+                {currentUser.bankDetails && (
+                  <div className="p-3 rounded-[8px] border border-[#e6e5e0] bg-[#fafaf7] space-y-1">
+                    <div className="text-[#807d72]">Settlement Bank Coordinates:</div>
+                    <div className="font-mono text-[#26251e]">
+                      {currentUser.bankDetails.bankName} &middot; A/C {currentUser.bankDetails.accountNumber}
+                    </div>
+                    <div className="font-mono text-[11px] text-[#807d72]">
+                      IFSC: {currentUser.bankDetails.ifscCode}
+                    </div>
                   </div>
                 )}
               </div>
-            </div>
-
-            {/* Permanent Storage & Export */}
-            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-xs space-y-3">
-              <h2 className="text-sm font-bold text-slate-900 dark:text-white">Permanent Ledger Exports</h2>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                All settlements, UTR numbers, payment proofs, and audit timestamps are permanently stored in the system database. You can export the ledger anytime for offline compliance.
-              </p>
-
-              <div className="flex flex-wrap gap-2.5 pt-1">
-                <a
-                  href="/api/export?format=csv"
-                  className="px-4 py-2 text-xs font-semibold rounded-xl bg-slate-900 text-white dark:bg-slate-800 hover:bg-slate-800 dark:hover:bg-slate-700 flex items-center gap-1.5 transition-colors"
-                >
-                  <Download className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>Download Ledger as CSV</span>
-                </a>
-
-                <a
-                  href="/api/export?format=json"
-                  className="px-4 py-2 text-xs font-semibold rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 flex items-center gap-1.5 transition-colors"
-                >
-                  <Download className="w-3.5 h-3.5 text-blue-400" />
-                  <span>Download Raw JSON Backup</span>
-                </a>
-              </div>
-            </div>
-
-            {/* Logout button */}
-            <div className="pt-2">
-              <button
-                onClick={handleLogout}
-                className="w-full py-2.5 px-4 text-xs font-semibold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/30 hover:bg-rose-100 rounded-xl transition-colors border border-rose-200 dark:border-rose-900/60"
-              >
-                Log Out of SettleTrack
-              </button>
             </div>
           </div>
         )}
       </main>
 
-      {/* Mobile Bottom Navigation */}
+      {/* Mobile Navigation Dock */}
       <BottomNav
         currentTab={currentTab}
         onTabChange={setCurrentTab}
         role={currentUser.role}
         onOpenNewAction={() => {
-          if (currentUser.role === 'merchant') {
-            setIsRaiseModalOpen(true);
-          } else if (currentUser.role === 'subadmin') {
-            setIsRaiseModalOpen(true);
-          } else {
+          if (currentUser.role === 'admin') {
             setIsPlatformAccountsModalOpen(true);
+          } else {
+            setIsRaiseModalOpen(true);
           }
         }}
-        pendingClearCount={pendingClearCount}
-        awaitingReviewCount={awaitingReviewCount}
+        pendingClearCount={stats?.totalPendingCount || 0}
+        awaitingReviewCount={stats?.totalAwaitingReviewCount || 0}
       />
 
-      {/* MODALS */}
-      {/* 1. Raise Settlement Modal */}
+      {/* Modals */}
       <RaiseSettlementModal
         isOpen={isRaiseModalOpen}
         onClose={() => setIsRaiseModalOpen(false)}
@@ -953,7 +780,6 @@ export default function Home() {
         }}
       />
 
-      {/* 2. Clear Settlement (Payer) Modal */}
       <ClearSettlementModal
         isOpen={isClearModalOpen}
         settlement={selectedSettlementToClear}
@@ -962,12 +788,9 @@ export default function Home() {
           setSelectedSettlementToClear(null);
         }}
         currentUser={currentUser}
-        onSuccess={() => {
-          reloadData();
-        }}
+        onSuccess={() => reloadData()}
       />
 
-      {/* 3. Review Proof & Close (Payee) Modal */}
       <ReviewProofModal
         isOpen={isReviewModalOpen}
         settlement={selectedSettlementToReview}
@@ -976,22 +799,16 @@ export default function Home() {
           setSelectedSettlementToReview(null);
         }}
         currentUser={currentUser}
-        onSuccess={() => {
-          reloadData();
-        }}
+        onSuccess={() => reloadData()}
       />
 
-      {/* 4. Add Merchant Modal */}
       <MerchantManagementModal
         isOpen={isAddMerchantModalOpen}
         onClose={() => setIsAddMerchantModalOpen(false)}
         currentUser={currentUser}
-        onSuccess={() => {
-          reloadData();
-        }}
+        onSuccess={() => reloadData()}
       />
 
-      {/* 5. Reset Password Modal */}
       <ResetPasswordModal
         isOpen={isResetPasswordModalOpen}
         targetUser={selectedUserToReset}
@@ -1000,16 +817,14 @@ export default function Home() {
           setSelectedUserToReset(null);
         }}
         currentUser={currentUser}
-        onSuccess={() => {
-          reloadData();
-        }}
+        onSuccess={() => reloadData()}
       />
 
-      {/* 6. Platform Accounts Modal */}
       <PlatformAccountsModal
         isOpen={isPlatformAccountsModalOpen}
         onClose={() => setIsPlatformAccountsModalOpen(false)}
         currentUser={currentUser}
+        onSuccess={() => reloadData()}
       />
     </div>
   );

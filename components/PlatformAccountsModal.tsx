@@ -2,28 +2,33 @@
 
 import React from 'react';
 import { PlatformCollectionAccount, User } from '@/types';
+import { Dialog, DialogContent, DialogHeader } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import { X, Building2, Smartphone, Plus, Trash2, Check, Copy, AlertCircle } from 'lucide-react';
 
 interface PlatformAccountsModalProps {
   isOpen: boolean;
   onClose: () => void;
   currentUser: User;
+  onSuccess?: () => void;
 }
 
 export default function PlatformAccountsModal({
   isOpen,
   onClose,
-  currentUser
+  currentUser,
+  onSuccess,
 }: PlatformAccountsModalProps) {
   const [accounts, setAccounts] = React.useState<PlatformCollectionAccount[]>([]);
   const [loading, setLoading] = React.useState<boolean>(true);
   const [showAddForm, setShowAddForm] = React.useState<boolean>(false);
 
-  // Form states
   const [type, setType] = React.useState<'upi' | 'bank'>('upi');
   const [title, setTitle] = React.useState<string>('');
   const [upiId, setUpiId] = React.useState<string>('');
-  const [accountHolder, setAccountHolder] = React.useState<string>('Apex Settlement Platform');
+  const [accountHolder, setAccountHolder] = React.useState<string>('Apex Settlement Technologies Pvt Ltd');
   const [accountNumber, setAccountNumber] = React.useState<string>('');
   const [ifscCode, setIfscCode] = React.useState<string>('');
   const [bankName, setBankName] = React.useState<string>('');
@@ -49,78 +54,41 @@ export default function PlatformAccountsModal({
 
   React.useEffect(() => {
     if (!isOpen) return;
-    let isSubscribed = true;
-    fetch('/api/platform-accounts')
-      .then((res) => res.json())
-      .then((data) => {
-        if (isSubscribed && data.success) {
-          setAccounts(data.accounts);
-          setLoading(false);
-        }
-      })
-      .catch((err) => {
-        if (isSubscribed) {
-          console.error(err);
-          setLoading(false);
-        }
-      });
-
-    return () => {
-      isSubscribed = false;
-    };
+    refetch();
   }, [isOpen]);
 
   if (!isOpen) return null;
 
-  const handleCopy = (text: string, id: string) => {
-    navigator.clipboard.writeText(text);
-    setCopiedId(id);
-    setTimeout(() => setCopiedId(null), 2000);
-  };
-
   const handleAddAccount = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg(null);
-
-    if (!title.trim()) {
-      setErrorMsg('Account title is required');
-      return;
-    }
-
-    if (type === 'upi' && !upiId.trim()) {
-      setErrorMsg('UPI ID is required');
-      return;
-    }
-
-    if (type === 'bank' && (!accountNumber.trim() || !ifscCode.trim())) {
-      setErrorMsg('Bank Account Number and IFSC are required');
-      return;
-    }
-
     setIsSubmitting(true);
+
+    const newAccount: Omit<PlatformCollectionAccount, 'id' | 'updatedAt'> & { id?: string } = {
+      type,
+      title: title.trim(),
+      upiId: upiId?.trim(),
+      accountHolder: accountHolder.trim(),
+      accountNumber: accountNumber?.trim(),
+      ifscCode: ifscCode?.trim().toUpperCase(),
+      bankName: bankName?.trim(),
+      notes: notes?.trim(),
+      isActive: true,
+    };
+
     try {
       const res = await fetch('/api/platform-accounts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           actorId: currentUser.id,
-          account: {
-            type,
-            title: title.trim(),
-            upiId: upiId.trim() || undefined,
-            accountHolder: accountHolder.trim(),
-            accountNumber: accountNumber.trim() || undefined,
-            ifscCode: ifscCode.trim().toUpperCase() || undefined,
-            bankName: bankName.trim() || undefined,
-            notes: notes.trim() || undefined,
-            isActive: true
-          }
-        })
+          account: newAccount,
+        }),
       });
 
       const data = await res.json();
       if (!res.ok || !data.success) {
-        throw new Error(data.error || 'Failed to save account');
+        throw new Error(data.error || 'Failed to add collection account');
       }
 
       setShowAddForm(false);
@@ -131,280 +99,298 @@ export default function PlatformAccountsModal({
       setBankName('');
       setNotes('');
       refetch();
+      if (onSuccess) onSuccess();
     } catch (err: any) {
-      setErrorMsg(err.message || 'Error saving platform collection account');
+      setErrorMsg(err.message || 'Error adding account');
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (!confirm('Are you sure you want to remove this platform collection account?')) return;
+  const handleRemove = async (id: string) => {
     try {
-      await fetch(`/api/platform-accounts?id=${id}&actorId=${currentUser.id}`, {
-        method: 'DELETE'
+      const res = await fetch(
+        `/api/platform-accounts?id=${encodeURIComponent(id)}&actorId=${encodeURIComponent(currentUser.id)}`,
+        { method: 'DELETE' }
+      );
+      const data = await res.json();
+      if (data.success) {
+        refetch();
+      } else {
+        setErrorMsg(data.error || 'Failed to remove account');
+      }
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Error removing account');
+    }
+  };
+
+  const handleCopy = (id: string, text: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedId(id);
+    setTimeout(() => setCopiedId(null), 2000);
+  };
+
+  const handleToggleActive = async (id: string) => {
+    try {
+      const targetAcc = accounts.find((a) => a.id === id);
+      if (!targetAcc) return;
+      const res = await fetch('/api/platform-accounts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          actorId: currentUser.id,
+          account: {
+            ...targetAcc,
+            isActive: !targetAcc.isActive,
+          },
+        }),
       });
-      refetch();
+      const data = await res.json();
+      if (data.success) refetch();
     } catch (err) {
       console.error(err);
     }
   };
 
-  const isAdmin = currentUser.role === 'admin';
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-xs overflow-y-auto">
-      <div className="relative w-full max-w-xl bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 p-5 sm:p-6 my-8">
-        <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
-          <div>
-            <h2 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
-              <Building2 className="w-5 h-5 text-blue-500" />
-              <span>Platform Collection Bank Accounts &amp; UPI</span>
-            </h2>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-              Official accounts where platform money is collected by Admin
-            </p>
+    <Dialog open={isOpen} onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent className="max-w-2xl bg-[#ffffff] border border-[#e6e5e0] rounded-[12px] p-6 text-[#26251e] shadow-sm max-h-[90vh] overflow-y-auto">
+        <DialogHeader className="flex items-center justify-between pb-3 border-b border-[#efeee8]">
+          <div className="flex items-center justify-between w-full pr-6">
+            <div>
+              <div className="font-display text-[20px] font-medium tracking-tight text-[#26251e]">
+                Platform Collection Accounts
+              </div>
+              <div className="text-[12px] text-[#807d72]">
+                Official UPI QR VPAs and Bank Accounts for platform deposits
+              </div>
+            </div>
+
+            {currentUser.role === 'admin' && !showAddForm && (
+              <button
+                type="button"
+                onClick={() => setShowAddForm(true)}
+                className="btn-cursor-primary text-[12px] h-8 px-3"
+              >
+                <Plus className="size-3.5" />
+                <span>Add Account</span>
+              </button>
+            )}
           </div>
           <button
+            type="button"
             onClick={onClose}
-            className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"
+            className="w-7 h-7 rounded-[6px] border border-[#e6e5e0] flex items-center justify-center text-[#807d72] hover:text-[#26251e] hover:bg-[#fafaf7]"
           >
-            <X className="w-5 h-5" />
+            <X className="size-4" />
           </button>
-        </div>
+        </DialogHeader>
 
         {errorMsg && (
-          <div className="mt-3 p-3 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-600 dark:text-rose-400 text-xs flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 shrink-0" />
+          <div className="my-3 p-3 rounded-[8px] border border-[#cf2d56]/20 bg-[#fae8ed] text-[12px] text-[#cf2d56] flex items-center gap-2">
+            <AlertCircle className="size-4 shrink-0" />
             <span>{errorMsg}</span>
           </div>
         )}
 
-        <div className="mt-4 space-y-4 max-h-[70vh] overflow-y-auto pr-1">
-          {/* Admin action: Add New */}
-          {isAdmin && !showAddForm && (
-            <button
-              type="button"
-              onClick={() => setShowAddForm(true)}
-              className="w-full py-2.5 px-3 rounded-xl border border-dashed border-slate-300 dark:border-slate-700 hover:border-emerald-500 text-xs font-semibold text-slate-700 dark:text-slate-300 flex items-center justify-center gap-2 transition-colors bg-slate-50/50 dark:bg-slate-850"
-            >
-              <Plus className="w-4 h-4 text-emerald-500" />
-              <span>Add Platform Collection Account or UPI</span>
-            </button>
-          )}
+        {/* Add Account Inline Form */}
+        {showAddForm && (
+          <form onSubmit={handleAddAccount} className="p-4 rounded-[8px] border border-[#e6e5e0] bg-[#fafaf7] my-3 space-y-3">
+            <div className="flex items-center justify-between pb-2 border-b border-[#efeee8]">
+              <span className="text-[12px] font-semibold text-[#26251e]">Add New Collection Account</span>
+              <button
+                type="button"
+                onClick={() => setShowAddForm(false)}
+                className="text-[11px] text-[#807d72] hover:text-[#26251e]"
+              >
+                Cancel
+              </button>
+            </div>
 
-          {/* Add form */}
-          {showAddForm && (
-            <form onSubmit={handleAddAccount} className="p-4 bg-slate-50 dark:bg-slate-850 rounded-xl border border-slate-200 dark:border-slate-800 space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-slate-900 dark:text-white">Add New Collection Account</span>
-                <button
-                  type="button"
-                  onClick={() => setShowAddForm(false)}
-                  className="text-xs text-slate-400 hover:text-slate-600"
-                >
-                  Cancel
-                </button>
-              </div>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setType('upi')}
+                className={`py-1 px-3 text-[12px] rounded-[6px] border transition-colors ${
+                  type === 'upi'
+                    ? 'border-[#f54e00] bg-[#ffffff] font-semibold text-[#f54e00]'
+                    : 'border-[#e6e5e0] bg-[#ffffff] text-[#5a5852]'
+                }`}
+              >
+                UPI ID (VPA)
+              </button>
+              <button
+                type="button"
+                onClick={() => setType('bank')}
+                className={`py-1 px-3 text-[12px] rounded-[6px] border transition-colors ${
+                  type === 'bank'
+                    ? 'border-[#f54e00] bg-[#ffffff] font-semibold text-[#f54e00]'
+                    : 'border-[#e6e5e0] bg-[#ffffff] text-[#5a5852]'
+                }`}
+              >
+                Bank Account
+              </button>
+            </div>
 
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => setType('upi')}
-                  className={`py-1.5 px-3 text-xs font-medium rounded-lg border ${
-                    type === 'upi' ? 'bg-emerald-500 text-slate-950 font-bold border-emerald-400' : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700'
-                  }`}
-                >
-                  UPI ID
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setType('bank')}
-                  className={`py-1.5 px-3 text-xs font-medium rounded-lg border ${
-                    type === 'bank' ? 'bg-blue-500 text-white font-bold border-blue-400' : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700'
-                  }`}
-                >
-                  Bank Account
-                </button>
-              </div>
+            <div className="space-y-1">
+              <Label className="text-[11px] text-[#807d72]">Account Label / Title *</Label>
+              <Input
+                type="text"
+                required
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="e.g. Primary Collection UPI QR"
+                className="text-[12px] h-8 rounded-[6px] border-[#e6e5e0] bg-[#ffffff]"
+              />
+            </div>
 
-              <div>
-                <label className="block text-[11px] text-slate-500 mb-1">Account Label / Title *</label>
-                <input
+            {type === 'upi' ? (
+              <div className="space-y-1">
+                <Label className="text-[11px] text-[#807d72]">UPI VPA *</Label>
+                <Input
                   type="text"
                   required
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  placeholder="e.g. Primary Customer Collection QR"
-                  className="w-full text-xs rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 p-2 text-slate-900 dark:text-white"
+                  value={upiId}
+                  onChange={(e) => setUpiId(e.target.value)}
+                  placeholder="apexplatform.collect@icici"
+                  className="font-mono text-[12px] h-8 rounded-[6px] border-[#e6e5e0] bg-[#ffffff]"
                 />
               </div>
-
-              <div>
-                <label className="block text-[11px] text-slate-500 mb-1">Account Holder / Entity *</label>
-                <input
-                  type="text"
-                  required
-                  value={accountHolder}
-                  onChange={(e) => setAccountHolder(e.target.value)}
-                  className="w-full text-xs rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 p-2 text-slate-900 dark:text-white"
-                />
-              </div>
-
-              {type === 'upi' ? (
-                <div>
-                  <label className="block text-[11px] text-slate-500 mb-1">UPI ID (VPA) *</label>
-                  <input
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <Label className="text-[11px] text-[#807d72]">Account Number *</Label>
+                  <Input
                     type="text"
                     required
-                    value={upiId}
-                    onChange={(e) => setUpiId(e.target.value)}
-                    placeholder="platform.pay@icici"
-                    className="w-full text-xs font-mono rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 p-2 text-slate-900 dark:text-white"
+                    value={accountNumber}
+                    onChange={(e) => setAccountNumber(e.target.value)}
+                    className="font-mono text-[12px] h-8 rounded-[6px] border-[#e6e5e0] bg-[#ffffff]"
                   />
                 </div>
-              ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                  <div>
-                    <label className="block text-[11px] text-slate-500 mb-1">Bank Name</label>
-                    <input
-                      type="text"
-                      value={bankName}
-                      onChange={(e) => setBankName(e.target.value)}
-                      placeholder="ICICI Bank"
-                      className="w-full text-xs rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 p-2 text-slate-900 dark:text-white"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] text-slate-500 mb-1">A/C Number *</label>
-                    <input
-                      type="text"
-                      required
-                      value={accountNumber}
-                      onChange={(e) => setAccountNumber(e.target.value)}
-                      placeholder="184905001290"
-                      className="w-full text-xs font-mono rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 p-2 text-slate-900 dark:text-white"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] text-slate-500 mb-1">IFSC Code *</label>
-                    <input
-                      type="text"
-                      required
-                      value={ifscCode}
-                      onChange={(e) => setIfscCode(e.target.value.toUpperCase())}
-                      placeholder="ICIC0001849"
-                      className="w-full text-xs font-mono uppercase rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 p-2 text-slate-900 dark:text-white"
-                    />
-                  </div>
+                <div className="space-y-1">
+                  <Label className="text-[11px] text-[#807d72]">IFSC Code *</Label>
+                  <Input
+                    type="text"
+                    required
+                    value={ifscCode}
+                    onChange={(e) => setIfscCode(e.target.value.toUpperCase())}
+                    placeholder="ICIC0001849"
+                    className="font-mono uppercase text-[12px] h-8 rounded-[6px] border-[#e6e5e0] bg-[#ffffff]"
+                  />
                 </div>
-              )}
-
-              <div>
-                <label className="block text-[11px] text-slate-500 mb-1">Notes / Description</label>
-                <input
-                  type="text"
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  placeholder="e.g. Primary collecting account for all incoming UPI traffic"
-                  className="w-full text-xs rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 p-2 text-slate-900 dark:text-white"
-                />
               </div>
+            )}
 
-              <div className="flex justify-end gap-2 pt-1">
-                <button
-                  type="submit"
-                  disabled={isSubmitting}
-                  className="px-4 py-1.5 text-xs font-semibold text-slate-950 bg-emerald-400 hover:bg-emerald-300 rounded-lg"
-                >
-                  {isSubmitting ? 'Saving...' : 'Save Account'}
-                </button>
-              </div>
-            </form>
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowAddForm(false)}
+                className="btn-cursor-secondary text-[12px] h-8 px-3"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={isSubmitting}
+                className="btn-cursor-primary text-[12px] h-8 px-4"
+              >
+                {isSubmitting ? 'Adding...' : 'Save Account'}
+              </button>
+            </div>
+          </form>
+        )}
+
+        {/* Account List */}
+        <div className="space-y-2.5 my-2">
+          {loading && (
+            <div className="p-6 text-center text-[12px] text-[#807d72]">Loading accounts...</div>
           )}
 
-          {/* Accounts list */}
-          <div className="space-y-2.5">
-            {accounts.map((acc) => (
-              <div 
-                key={acc.id}
-                className="p-3.5 bg-white dark:bg-slate-800/80 rounded-xl border border-slate-200 dark:border-slate-800 space-y-2"
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <div className="flex items-center gap-2">
-                    {acc.type === 'upi' ? (
-                      <Smartphone className="w-4 h-4 text-emerald-500" />
-                    ) : (
-                      <Building2 className="w-4 h-4 text-blue-500" />
-                    )}
-                    <span className="font-semibold text-xs text-slate-900 dark:text-white">
-                      {acc.title}
-                    </span>
+          {!loading && accounts.length === 0 && (
+            <div className="p-8 text-center text-[12px] text-[#807d72] rounded-[8px] border border-[#e6e5e0] bg-[#fafaf7]">
+              No collection accounts configured.
+            </div>
+          )}
+
+          {!loading &&
+            accounts.map((acc) => {
+              const isUpi = acc.type === 'upi';
+              return (
+                <div
+                  key={acc.id}
+                  className={`p-3.5 rounded-[8px] border transition-colors ${
+                    acc.isActive ? 'border-[#e6e5e0] bg-[#ffffff]' : 'border-[#e6e5e0]/60 bg-[#fafaf7] opacity-60'
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-2 pb-2 border-b border-[#efeee8]">
+                    <div className="flex items-center gap-2">
+                      {isUpi ? (
+                        <Smartphone className="size-4 text-[#f54e00]" />
+                      ) : (
+                        <Building2 className="size-4 text-[#807d72]" />
+                      )}
+                      <span className="font-semibold text-[13px] text-[#26251e]">{acc.title}</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[10px] font-mono uppercase px-2 py-0.5 rounded-full bg-[#e6e5e0] text-[#5a5852]">
+                        {acc.type}
+                      </span>
+                      {acc.isActive ? (
+                        <span className="text-[10px] font-mono text-[#1f8a65] font-semibold">ACTIVE</span>
+                      ) : (
+                        <span className="text-[10px] font-mono text-[#807d72]">INACTIVE</span>
+                      )}
+                    </div>
                   </div>
 
-                  {isAdmin && (
-                    <button
-                      type="button"
-                      onClick={() => handleDelete(acc.id)}
-                      className="text-slate-400 hover:text-rose-500 p-1 rounded"
-                      title="Delete account"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  )}
-                </div>
+                  <div className="py-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2 font-mono text-[12px]">
+                    <div>
+                      <div className="text-[11px] font-sans text-[#807d72]">{acc.accountHolder}</div>
+                      {isUpi ? (
+                        <div className="text-[14px] font-bold text-[#f54e00]">{acc.upiId}</div>
+                      ) : (
+                        <div className="text-[#26251e]">
+                          {acc.bankName} · A/C {acc.accountNumber} · IFSC: {acc.ifscCode}
+                        </div>
+                      )}
+                    </div>
 
-                <div className="p-2.5 bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-100 dark:border-slate-800 text-xs font-mono">
-                  {acc.type === 'upi' ? (
-                    <div className="flex items-center justify-between">
-                      <span className="text-slate-900 dark:text-emerald-400 font-bold truncate">{acc.upiId}</span>
+                    <div className="flex items-center gap-1.5 self-end sm:self-auto">
                       <button
                         type="button"
-                        onClick={() => handleCopy(acc.upiId || '', acc.id)}
-                        className="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
-                        title="Copy UPI"
+                        onClick={() => handleCopy(acc.id, isUpi ? acc.upiId || '' : acc.accountNumber || '')}
+                        className="btn-cursor-secondary text-[11px] h-7 px-2.5"
                       >
-                        {copiedId === acc.id ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+                        {copiedId === acc.id ? <Check className="size-3 text-[#1f8a65]" /> : <Copy className="size-3" />}
+                        <span>{copiedId === acc.id ? 'Copied' : 'Copy'}</span>
                       </button>
+
+                      {currentUser.role === 'admin' && (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => handleToggleActive(acc.id)}
+                            className="btn-cursor-secondary text-[11px] h-7 px-2"
+                          >
+                            {acc.isActive ? 'Disable' : 'Enable'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleRemove(acc.id)}
+                            className="btn-cursor-secondary text-[11px] h-7 px-2 text-[#cf2d56] hover:border-[#cf2d56]"
+                          >
+                            <Trash2 className="size-3" />
+                          </button>
+                        </>
+                      )}
                     </div>
-                  ) : (
-                    <div className="space-y-1">
-                      <div className="flex justify-between">
-                        <span className="text-slate-500 font-sans">Bank:</span>
-                        <span className="text-slate-900 dark:text-white font-sans">{acc.bankName}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-slate-500 font-sans">A/C:</span>
-                        <span className="text-slate-900 dark:text-white font-bold">{acc.accountNumber}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-slate-500 font-sans">IFSC:</span>
-                        <span className="text-slate-900 dark:text-white">{acc.ifscCode}</span>
-                      </div>
-                    </div>
-                  )}
+                  </div>
                 </div>
-
-                {acc.notes && (
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                    {acc.notes}
-                  </p>
-                )}
-              </div>
-            ))}
-          </div>
+              );
+            })}
         </div>
-
-        <div className="mt-4 pt-3 flex justify-end border-t border-slate-100 dark:border-slate-800">
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-4 py-2 text-xs font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg"
-          >
-            Close
-          </button>
-        </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

@@ -2,18 +2,11 @@
 
 import React from 'react';
 import { User, SettlementPayoutDetails } from '@/types';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
-} from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogHeader } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Calendar, Clock, Smartphone, Building, IndianRupee, AlertCircle } from 'lucide-react';
+import { Textarea } from '@/components/ui/textarea';
+import { Calendar, Clock, Smartphone, Building, IndianRupee, AlertCircle, X, ArrowUpRight, Building2, UserCheck } from 'lucide-react';
 
 interface RaiseSettlementModalProps {
   isOpen: boolean;
@@ -26,7 +19,7 @@ export default function RaiseSettlementModal({
   isOpen,
   onClose,
   currentUser,
-  onSuccess
+  onSuccess,
 }: RaiseSettlementModalProps) {
   const [amount, setAmount] = React.useState<string>('50000');
   const [startDate, setStartDate] = React.useState<string>(() => {
@@ -37,21 +30,49 @@ export default function RaiseSettlementModal({
     return new Date().toISOString().slice(0, 10);
   });
   const [endTime, setEndTime] = React.useState<string>('23:59');
-  const [hasTimeConstraint, setHasTimeConstraint] = React.useState<boolean>(true);
 
   const [payoutMethod, setPayoutMethod] = React.useState<'upi' | 'bank'>('upi');
   const [upiId, setUpiId] = React.useState<string>(currentUser.defaultUpiId || '');
-  
-  const [accountHolder, setAccountHolder] = React.useState<string>(currentUser.bankDetails?.accountHolder || currentUser.name || '');
+  const [accountHolder, setAccountHolder] = React.useState<string>(
+    currentUser.bankDetails?.accountHolder || currentUser.name || ''
+  );
   const [accountNumber, setAccountNumber] = React.useState<string>(currentUser.bankDetails?.accountNumber || '');
   const [ifscCode, setIfscCode] = React.useState<string>(currentUser.bankDetails?.ifscCode || '');
   const [bankName, setBankName] = React.useState<string>(currentUser.bankDetails?.bankName || '');
   const [merchantNotes, setMerchantNotes] = React.useState<string>('');
+  const [clearingDestination, setClearingDestination] = React.useState<'subadmin' | 'admin'>('subadmin');
 
   const [isSubmitting, setIsSubmitting] = React.useState<boolean>(false);
   const [errorMsg, setErrorMsg] = React.useState<string | null>(null);
 
+  React.useEffect(() => {
+    if (isOpen) {
+      setErrorMsg(null);
+      if (currentUser.defaultUpiId && !upiId) {
+        setUpiId(currentUser.defaultUpiId);
+      }
+      if (currentUser.bankDetails) {
+        setAccountHolder(currentUser.bankDetails.accountHolder || currentUser.name);
+        setAccountNumber(currentUser.bankDetails.accountNumber || '');
+        setIfscCode(currentUser.bankDetails.ifscCode || '');
+        setBankName(currentUser.bankDetails.bankName || '');
+      }
+      setClearingDestination(currentUser.subAdminId ? 'subadmin' : 'admin');
+    }
+  }, [isOpen, currentUser]);
+
   if (!isOpen) return null;
+
+  const isSubAdmin = currentUser.role === 'subadmin';
+
+  const applyPreset = (daysAgo: number) => {
+    const end = new Date().toISOString().slice(0, 10);
+    const start = new Date(Date.now() - daysAgo * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    setStartDate(start);
+    setEndDate(end);
+    setStartTime('00:00');
+    setEndTime('23:59');
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -68,25 +89,26 @@ export default function RaiseSettlementModal({
       return;
     }
 
-    if (payoutMethod === 'upi' && !upiId.trim()) {
-      setErrorMsg('Please enter the custom destination UPI ID');
-      return;
-    }
-
-    if (payoutMethod === 'bank' && (!accountNumber.trim() || !ifscCode.trim())) {
-      setErrorMsg('Please provide the Bank Account Number and IFSC code');
-      return;
-    }
-
     const payoutDetails: SettlementPayoutDetails = {
       method: payoutMethod,
-      ...(payoutMethod === 'upi' ? { upiId: upiId.trim() } : {
-        accountHolder: accountHolder.trim(),
-        accountNumber: accountNumber.trim(),
-        ifscCode: ifscCode.trim().toUpperCase(),
-        bankName: bankName.trim()
-      })
     };
+
+    if (payoutMethod === 'upi') {
+      if (!upiId.trim()) {
+        setErrorMsg('Please enter your destination UPI ID');
+        return;
+      }
+      payoutDetails.upiId = upiId.trim();
+    } else {
+      if (!accountNumber.trim() || !ifscCode.trim()) {
+        setErrorMsg('Bank Account Number and IFSC code are required');
+        return;
+      }
+      payoutDetails.accountHolder = accountHolder.trim();
+      payoutDetails.accountNumber = accountNumber.trim();
+      payoutDetails.ifscCode = ifscCode.trim().toUpperCase();
+      payoutDetails.bankName = bankName.trim() || 'Scheduled Bank';
+    }
 
     setIsSubmitting(true);
     try {
@@ -98,270 +120,353 @@ export default function RaiseSettlementModal({
           amount: numAmount,
           dateRange: {
             startDate,
-            startTime: hasTimeConstraint ? startTime : undefined,
+            startTime,
             endDate,
-            endTime: hasTimeConstraint ? endTime : undefined
+            endTime,
           },
           payoutDetails,
-          merchantNotes
-        })
+          merchantNotes: merchantNotes.trim(),
+          recipientType: isSubAdmin ? 'admin' : clearingDestination,
+        }),
       });
 
       const data = await res.json();
       if (!res.ok || !data.success) {
-        throw new Error(data.error || 'Failed to submit settlement request');
+        throw new Error(data.error || 'Failed to raise settlement');
       }
 
       onSuccess();
       onClose();
     } catch (err: any) {
-      setErrorMsg(err.message || 'Something went wrong');
+      setErrorMsg(err.message || 'Error submitting request');
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const isSubAdmin = currentUser.role === 'subadmin';
-
   return (
     <Dialog open={isOpen} onOpenChange={(open) => { if (!open) onClose(); }}>
-      <DialogContent className="max-w-lg p-5 sm:p-6 max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle className="text-lg font-bold">
-            {isSubAdmin ? 'Request Platform Settlement' : 'Raise Settlement Request'}
-          </DialogTitle>
-          <DialogDescription className="text-xs">
-            {isSubAdmin 
-              ? 'Request aggregated payout clearance from Platform Admin' 
-              : 'Submit collected turnover date range & amount to your Agent / Sub-Admin'}
-          </DialogDescription>
+      <DialogContent className="max-w-xl bg-[#ffffff] border border-[#e6e5e0] rounded-[12px] p-6 text-[#26251e] shadow-sm max-h-[90vh] overflow-y-auto">
+        <DialogHeader className="flex items-center justify-between pb-3 border-b border-[#efeee8]">
+          <div>
+            <div className="font-display text-[20px] font-medium tracking-tight text-[#26251e]">
+              {isSubAdmin
+                ? 'Raise Sub-Admin Settlement to Platform'
+                : clearingDestination === 'admin'
+                ? 'Raise Direct Settlement to Platform Admin'
+                : 'Raise Settlement to Assigned Agent'}
+            </div>
+            <div className="text-[12px] text-[#807d72]">
+              {isSubAdmin
+                ? 'Request aggregated clearing from Platform Admin'
+                : clearingDestination === 'admin'
+                ? 'Direct payout clearance requested from Platform Treasury HQ'
+                : `Submit turnover timeframe & amount to ${currentUser.subAdminName || 'Agent'}`}
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="w-7 h-7 rounded-[6px] border border-[#e6e5e0] flex items-center justify-center text-[#807d72] hover:text-[#26251e] hover:bg-[#fafaf7]"
+          >
+            <X className="size-4" />
+          </button>
         </DialogHeader>
 
         {errorMsg && (
-          <div className="p-3 rounded-lg bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 shrink-0" />
+          <div className="my-3 p-3 rounded-[8px] border border-[#cf2d56]/20 bg-[#fae8ed] text-[12px] text-[#cf2d56] flex items-center gap-2">
+            <AlertCircle className="size-4 shrink-0" />
             <span>{errorMsg}</span>
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-4 pt-2">
           {/* Amount input */}
           <div className="space-y-1.5">
-            <Label htmlFor="amountInput" className="text-xs font-semibold">
-              Settlement Amount (INR numerical value) *
+            <Label htmlFor="amountInput" className="text-[12px] font-semibold text-[#26251e] block">
+              Settlement Amount (INR) *
             </Label>
             <div className="relative">
-              <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
-                <IndianRupee className="h-4 w-4 text-muted-foreground" />
-              </div>
+              <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-[#807d72] font-mono text-[14px]">
+                ₹
+              </span>
               <Input
                 id="amountInput"
                 type="number"
-                step="any"
-                min="1"
+                min="100"
+                step="1"
                 required
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
                 placeholder="50000"
-                className="pl-9 text-base sm:text-lg font-mono font-bold"
+                className="pl-7 font-mono text-[16px] font-medium h-10 rounded-[8px] border-[#e6e5e0] bg-[#ffffff] focus-visible:ring-1 focus-visible:ring-[#f54e00]"
               />
             </div>
-            {Number(amount) > 0 && (
-              <span className="text-[11px] text-muted-foreground block font-mono">
-                Formatted: ₹{Number(amount).toLocaleString('en-IN')}
-              </span>
-            )}
           </div>
 
-          {/* Date range constraint */}
-          <div className="p-3.5 bg-muted/40 rounded-xl border border-border/80 space-y-2.5">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold flex items-center gap-1.5">
-                <Calendar className="w-3.5 h-3.5 text-emerald-600" />
-                Settlement Date Range *
-              </span>
-              <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={hasTimeConstraint}
-                  onChange={(e) => setHasTimeConstraint(e.target.checked)}
-                  className="rounded border-border text-emerald-600 focus:ring-emerald-500"
-                />
-                <span>Include Time Constraint</span>
-              </label>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <Label className="text-[11px] text-muted-foreground mb-1 block">From Date</Label>
-                <Input
-                  type="date"
-                  required
-                  value={startDate}
-                  onChange={(e) => setStartDate(e.target.value)}
-                  className="text-xs h-8 bg-background"
-                />
-                {hasTimeConstraint && (
-                  <div className="mt-1.5 flex items-center gap-1">
-                    <Clock className="w-3 h-3 text-muted-foreground shrink-0" />
-                    <Input
-                      type="time"
-                      value={startTime}
-                      onChange={(e) => setStartTime(e.target.value)}
-                      className="text-[11px] h-7 bg-background"
-                    />
-                  </div>
-                )}
-              </div>
-
-              <div>
-                <Label className="text-[11px] text-muted-foreground mb-1 block">To Date</Label>
-                <Input
-                  type="date"
-                  required
-                  value={endDate}
-                  onChange={(e) => setEndDate(e.target.value)}
-                  className="text-xs h-8 bg-background"
-                />
-                {hasTimeConstraint && (
-                  <div className="mt-1.5 flex items-center gap-1">
-                    <Clock className="w-3 h-3 text-muted-foreground shrink-0" />
-                    <Input
-                      type="time"
-                      value={endTime}
-                      onChange={(e) => setEndTime(e.target.value)}
-                      className="text-[11px] h-7 bg-background"
-                    />
-                  </div>
-                )}
+          {/* Date range picker with presets */}
+          <div className="space-y-1.5">
+            <div className="flex flex-wrap items-center justify-between gap-1">
+              <Label className="text-[12px] font-semibold text-[#26251e] block">
+                Turnover Collection Date Range *
+              </Label>
+              <div className="flex items-center gap-1">
+                {[
+                  { label: 'Today', days: 0 },
+                  { label: 'Yesterday', days: 1 },
+                  { label: '3 Days', days: 3 },
+                  { label: '7 Days', days: 7 },
+                ].map((p) => (
+                  <button
+                    key={p.label}
+                    type="button"
+                    onClick={() => applyPreset(p.days)}
+                    className="px-2 py-0.5 rounded-[4px] border border-[#e6e5e0] bg-[#fafaf7] hover:border-[#cfcdc4] text-[10px] font-mono text-[#5a5852] hover:text-[#26251e] transition-colors"
+                  >
+                    {p.label}
+                  </button>
+                ))}
               </div>
             </div>
-          </div>
-
-          {/* Payout Destination Selector: Custom UPI ID or Bank Account */}
-          <div className="space-y-2">
-            <Label className="text-xs font-semibold block">
-              Payout Destination (Where funds will be transferred) *
-            </Label>
-            <div className="grid grid-cols-2 gap-2 p-1 bg-muted rounded-lg">
-              <Button
-                type="button"
-                variant={payoutMethod === 'upi' ? 'default' : 'ghost'}
-                size="sm"
-                onClick={() => setPayoutMethod('upi')}
-                className={`text-xs h-8 gap-1.5 ${payoutMethod === 'upi' ? 'bg-white text-foreground shadow-xs font-semibold hover:bg-white' : 'text-muted-foreground'}`}
-              >
-                <Smartphone className="w-3.5 h-3.5 text-emerald-600" />
-                <span>Custom UPI ID</span>
-              </Button>
-              <Button
-                type="button"
-                variant={payoutMethod === 'bank' ? 'default' : 'ghost'}
-                size="sm"
-                onClick={() => setPayoutMethod('bank')}
-                className={`text-xs h-8 gap-1.5 ${payoutMethod === 'bank' ? 'bg-white text-foreground shadow-xs font-semibold hover:bg-white' : 'text-muted-foreground'}`}
-              >
-                <Building className="w-3.5 h-3.5 text-blue-600" />
-                <span>Bank Account</span>
-              </Button>
-            </div>
-
-            {payoutMethod === 'upi' ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
               <div className="space-y-1">
-                <Label htmlFor="payoutUpi" className="text-[11px] text-muted-foreground">
-                  Requested UPI ID (VPA) *
-                </Label>
-                <Input
-                  id="payoutUpi"
-                  type="text"
-                  required
-                  value={upiId}
-                  onChange={(e) => setUpiId(e.target.value)}
-                  placeholder="merchant.store@upi"
-                  className="font-mono text-xs"
-                />
-              </div>
-            ) : (
-              <div className="space-y-2 pt-1">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  <div className="space-y-1">
-                    <Label className="text-[11px] text-muted-foreground">Account Holder Name *</Label>
-                    <Input
-                      type="text"
-                      required
-                      value={accountHolder}
-                      onChange={(e) => setAccountHolder(e.target.value)}
-                      placeholder="Beneficiary Name"
-                      className="text-xs"
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="text-[11px] text-muted-foreground">Bank Name</Label>
-                    <Input
-                      type="text"
-                      value={bankName}
-                      onChange={(e) => setBankName(e.target.value)}
-                      placeholder="e.g. HDFC Bank, SBI"
-                      className="text-xs"
-                    />
-                  </div>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  <div className="space-y-1">
-                    <Label className="text-[11px] text-muted-foreground">Account Number *</Label>
-                    <Input
-                      type="text"
-                      required
-                      value={accountNumber}
-                      onChange={(e) => setAccountNumber(e.target.value)}
-                      placeholder="Account Number"
-                      className="font-mono text-xs"
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="text-[11px] text-muted-foreground">IFSC Code *</Label>
-                    <Input
-                      type="text"
-                      required
-                      value={ifscCode}
-                      onChange={(e) => setIfscCode(e.target.value.toUpperCase())}
-                      placeholder="HDFC0001234"
-                      className="font-mono uppercase text-xs"
-                    />
-                  </div>
+                <span className="text-[11px] font-mono text-[#807d72]">From Date & Time</span>
+                <div className="flex gap-1.5">
+                  <Input
+                    type="date"
+                    required
+                    value={startDate}
+                    onChange={(e) => setStartDate(e.target.value)}
+                    className="text-[12px] h-9 rounded-[8px] border-[#e6e5e0] bg-[#ffffff]"
+                  />
+                  <Input
+                    type="time"
+                    value={startTime}
+                    onChange={(e) => setStartTime(e.target.value)}
+                    className="text-[12px] w-24 h-9 rounded-[8px] border-[#e6e5e0] bg-[#ffffff]"
+                  />
                 </div>
               </div>
-            )}
+
+              <div className="space-y-1">
+                <span className="text-[11px] font-mono text-[#807d72]">To Date & Time</span>
+                <div className="flex gap-1.5">
+                  <Input
+                    type="date"
+                    required
+                    value={endDate}
+                    onChange={(e) => setEndDate(e.target.value)}
+                    className="text-[12px] h-9 rounded-[8px] border-[#e6e5e0] bg-[#ffffff]"
+                  />
+                  <Input
+                    type="time"
+                    value={endTime}
+                    onChange={(e) => setEndTime(e.target.value)}
+                    className="text-[12px] w-24 h-9 rounded-[8px] border-[#e6e5e0] bg-[#ffffff]"
+                  />
+                </div>
+              </div>
+            </div>
           </div>
 
-          {/* Remarks */}
-          <div className="space-y-1">
-            <Label htmlFor="merchantNotesInput" className="text-xs font-semibold">
-              Notes / Remarks (Optional)
+          {/* Clearing Authority Selector (Direct Admin vs Assigned Agent) */}
+          {!isSubAdmin && (
+            <div className="space-y-1.5">
+              <Label className="text-[12px] font-semibold text-[#26251e] block">
+                Clearing Authority / Payer *
+              </Label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {/* Direct Platform Admin */}
+                <button
+                  type="button"
+                  onClick={() => setClearingDestination('admin')}
+                  className={`p-3 rounded-[8px] border text-left transition-all ${
+                    clearingDestination === 'admin'
+                      ? 'border-[#f54e00] bg-[#fafaf7] text-[#26251e]'
+                      : 'border-[#e6e5e0] bg-[#ffffff] text-[#5a5852] hover:border-[#cfcdc4]'
+                  }`}
+                >
+                  <div className="flex items-center gap-1.5 text-[12px] font-semibold text-[#26251e]">
+                    <Building2 className="size-4 text-[#f54e00]" />
+                    <span>Platform Admin HQ</span>
+                  </div>
+                  <div className="text-[11px] text-[#807d72] mt-0.5">
+                    Direct clearance by Platform Admin
+                  </div>
+                  <div className="mt-1 text-[10px] font-mono text-[#1f8a65]">
+                    ✓ Direct Platform Payout
+                  </div>
+                </button>
+
+                {/* Assigned Sub-Admin Agent */}
+                <button
+                  type="button"
+                  disabled={!currentUser.subAdminId}
+                  onClick={() => setClearingDestination('subadmin')}
+                  className={`p-3 rounded-[8px] border text-left transition-all ${
+                    !currentUser.subAdminId
+                      ? 'opacity-50 cursor-not-allowed border-[#e6e5e0] bg-[#f7f7f4]'
+                      : clearingDestination === 'subadmin'
+                      ? 'border-[#f54e00] bg-[#fafaf7] text-[#26251e]'
+                      : 'border-[#e6e5e0] bg-[#ffffff] text-[#5a5852] hover:border-[#cfcdc4]'
+                  }`}
+                >
+                  <div className="flex items-center gap-1.5 text-[12px] font-semibold text-[#26251e]">
+                    <UserCheck className="size-4 text-[#807d72]" />
+                    <span>Assigned Regional Agent</span>
+                  </div>
+                  <div className="text-[11px] text-[#807d72] mt-0.5 truncate">
+                    {currentUser.subAdminName || 'No agent assigned'}
+                  </div>
+                  <div className="mt-1 text-[10px] font-mono text-[#807d72]">
+                    {currentUser.subAdminId ? 'Regional Desk Settlement' : 'Unassigned'}
+                  </div>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Payout method toggle */}
+          <div className="space-y-2">
+            <Label className="text-[12px] font-semibold text-[#26251e] block">
+              Destination Payout Method *
             </Label>
-            <Input
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setPayoutMethod('upi')}
+                className={`p-2.5 rounded-[8px] border text-left transition-colors flex items-center gap-2 ${
+                  payoutMethod === 'upi'
+                    ? 'border-[#f54e00] bg-[#fafaf7] text-[#26251e]'
+                    : 'border-[#e6e5e0] bg-[#ffffff] text-[#5a5852] hover:border-[#cfcdc4]'
+                }`}
+              >
+                <Smartphone className={`size-4 ${payoutMethod === 'upi' ? 'text-[#f54e00]' : 'text-[#807d72]'}`} />
+                <div>
+                  <div className="text-[12px] font-medium">UPI VPA</div>
+                  <div className="text-[10px] text-[#807d72]">Instant IMPS settlement</div>
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setPayoutMethod('bank')}
+                className={`p-2.5 rounded-[8px] border text-left transition-colors flex items-center gap-2 ${
+                  payoutMethod === 'bank'
+                    ? 'border-[#f54e00] bg-[#fafaf7] text-[#26251e]'
+                    : 'border-[#e6e5e0] bg-[#ffffff] text-[#5a5852] hover:border-[#cfcdc4]'
+                }`}
+              >
+                <Building className={`size-4 ${payoutMethod === 'bank' ? 'text-[#f54e00]' : 'text-[#807d72]'}`} />
+                <div>
+                  <div className="text-[12px] font-medium">Bank Account</div>
+                  <div className="text-[10px] text-[#807d72]">NEFT / RTGS transfer</div>
+                </div>
+              </button>
+            </div>
+          </div>
+
+          {/* Conditional Method Inputs */}
+          {payoutMethod === 'upi' ? (
+            <div className="space-y-1.5">
+              <Label htmlFor="upiInput" className="text-[12px] font-semibold text-[#26251e] block">
+                Destination UPI ID (VPA) *
+              </Label>
+              <Input
+                id="upiInput"
+                type="text"
+                required
+                value={upiId}
+                onChange={(e) => setUpiId(e.target.value)}
+                placeholder="storename@okaxis or mobile@upi"
+                className="font-mono text-[13px] h-10 rounded-[8px] border-[#e6e5e0] bg-[#ffffff]"
+              />
+            </div>
+          ) : (
+            <div className="space-y-2 p-3.5 rounded-[8px] border border-[#e6e5e0] bg-[#fafaf7]">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <span className="text-[11px] text-[#807d72]">Account Holder Name *</span>
+                  <Input
+                    type="text"
+                    required
+                    value={accountHolder}
+                    onChange={(e) => setAccountHolder(e.target.value)}
+                    className="text-[12px] h-9 rounded-[8px] border-[#e6e5e0] bg-[#ffffff]"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <span className="text-[11px] text-[#807d72]">Bank Name</span>
+                  <Input
+                    type="text"
+                    value={bankName}
+                    onChange={(e) => setBankName(e.target.value)}
+                    placeholder="e.g. HDFC Bank, SBI"
+                    className="text-[12px] h-9 rounded-[8px] border-[#e6e5e0] bg-[#ffffff]"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <span className="text-[11px] text-[#807d72]">Account Number *</span>
+                  <Input
+                    type="text"
+                    required
+                    value={accountNumber}
+                    onChange={(e) => setAccountNumber(e.target.value)}
+                    className="font-mono text-[12px] h-9 rounded-[8px] border-[#e6e5e0] bg-[#ffffff]"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <span className="text-[11px] text-[#807d72]">IFSC Code *</span>
+                  <Input
+                    type="text"
+                    required
+                    value={ifscCode}
+                    onChange={(e) => setIfscCode(e.target.value.toUpperCase())}
+                    placeholder="HDFC0001234"
+                    className="font-mono uppercase text-[12px] h-9 rounded-[8px] border-[#e6e5e0] bg-[#ffffff]"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Notes */}
+          <div className="space-y-1.5">
+            <Label htmlFor="merchantNotesInput" className="text-[12px] font-semibold text-[#26251e] block">
+              Notes / Transaction Breakdown (Optional)
+            </Label>
+            <Textarea
               id="merchantNotesInput"
-              type="text"
+              rows={2}
               value={merchantNotes}
               onChange={(e) => setMerchantNotes(e.target.value)}
-              placeholder="e.g. Weekend counter collections, QR settlement"
-              className="text-xs"
+              placeholder="e.g. UPI QR collection summary for weekend sale..."
+              className="text-[12px] rounded-[8px] border-[#e6e5e0] bg-[#ffffff]"
             />
           </div>
 
-          <DialogFooter className="pt-2 gap-2">
-            <Button type="button" variant="outline" size="sm" onClick={onClose} disabled={isSubmitting}>
-              Cancel
-            </Button>
-            <Button
-              type="submit"
-              size="sm"
+          {/* Submit */}
+          <div className="pt-3 border-t border-[#efeee8] flex items-center justify-end gap-2.5">
+            <button
+              type="button"
+              onClick={onClose}
               disabled={isSubmitting}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold"
+              className="btn-cursor-secondary text-[13px] h-9 px-4"
             >
-              {isSubmitting ? 'Submitting...' : 'Raise Settlement'}
-            </Button>
-          </DialogFooter>
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              className="btn-cursor-primary text-[13px] h-9 px-5"
+            >
+              <span>{isSubmitting ? 'Submitting...' : 'Raise Settlement'}</span>
+              <ArrowUpRight className="size-3.5" />
+            </button>
+          </div>
         </form>
       </DialogContent>
     </Dialog>

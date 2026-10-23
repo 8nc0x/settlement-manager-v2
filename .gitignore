@@ -1,7 +1,28 @@
+# Dependencies
 node_modules/
+/.pnp
+.pnp.js
+
+# Production builds
 .next/
-coverage/
-.DS_Store
-*.log
+out/
+build/
+dist/
+
+# Environment files (preserve template)
 .env*
 !.env.example
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# System & OS
+.DS_Store
+*.pem
+Thumbs.db
+
+# TypeScript cache
+tsconfig.tsbuildinfo
