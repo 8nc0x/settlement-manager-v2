@@ -7,8 +7,8 @@ export const authOptions: NextAuthOptions = {
     strategy: 'jwt',
     maxAge: 30 * 24 * 60 * 60, // 30 days
   },
-  // Only use secure cookies if explicitly running on HTTPS; allows HTTP IP:port hosting
-  useSecureCookies: Boolean(process.env.NEXTAUTH_URL?.startsWith('https://')),
+  // Auto-detect: use secure cookies when NEXTAUTH_URL starts with https://
+  useSecureCookies: (process.env.NEXTAUTH_URL ?? '').startsWith('https://'),
   secret: process.env.NEXTAUTH_SECRET || 'settletrack-production-secret-key-32chars',
   providers: [
     CredentialsProvider({
@@ -21,7 +21,7 @@ export const authOptions: NextAuthOptions = {
         if (!credentials?.email || !credentials?.password) {
           throw new Error('Email and password are required');
         }
-        const user = verifyUserPassword(credentials.email, credentials.password);
+        const user = await verifyUserPassword(credentials.email, credentials.password);
         if (!user) {
           throw new Error('Invalid email or password');
         }

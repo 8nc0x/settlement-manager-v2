@@ -142,7 +142,10 @@ function createSampleProofVoucher(amount: number, utr: string, recipientName: st
   return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
 }
 
-// Default initial state with hashed passwords (admin123, subadmin123, merchant123)
+// Default initial state with clean credentials and universal password: moremoneyhaha
+const DEFAULT_PASSWORD = 'moremoneyhaha';
+const defaultHash = bcrypt.hashSync(DEFAULT_PASSWORD, 10);
+
 const initialData: DatabaseSchema = {
   version: 2,
   lastUpdated: new Date().toISOString(),
@@ -150,9 +153,9 @@ const initialData: DatabaseSchema = {
     {
       id: 'usr_admin',
       email: 'admin@platform.com',
-      password: 'admin123',
-      passwordHash: bcrypt.hashSync('admin123', 10),
-      name: 'Vikram Singhania',
+      password: DEFAULT_PASSWORD,
+      passwordHash: defaultHash,
+      name: 'Platform Treasury Admin',
       role: 'admin',
       businessName: 'Apex Settlement Platform HQ',
       phone: '+91 98200 11223',
@@ -168,10 +171,51 @@ const initialData: DatabaseSchema = {
       updatedAt: '2026-01-01T00:00:00.000Z'
     },
     {
+      id: 'usr_admin_alias',
+      email: 'admin@settletrack.internal',
+      password: DEFAULT_PASSWORD,
+      passwordHash: defaultHash,
+      name: 'Platform Admin (Internal)',
+      role: 'admin',
+      businessName: 'SettleTrack Internal HQ',
+      phone: '+91 98200 11223',
+      defaultUpiId: 'admin.apex@icici',
+      bankDetails: {
+        accountHolder: 'Apex Settlement Technologies Pvt Ltd',
+        accountNumber: '184905001290',
+        ifscCode: 'ICIC0001849',
+        bankName: 'ICICI Bank'
+      },
+      status: 'active',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z'
+    },
+    {
       id: 'usr_sub_1',
+      email: 'subadmin@platform.com',
+      password: DEFAULT_PASSWORD,
+      passwordHash: defaultHash,
+      name: 'Regional Sub-Admin Desk',
+      role: 'subadmin',
+      createdBy: 'usr_admin',
+      businessName: 'RD Referral Agency & Settlements',
+      phone: '+91 98201 44521',
+      defaultUpiId: 'subadmin.clearing@okaxis',
+      bankDetails: {
+        accountHolder: 'Regional Settlement Agency',
+        accountNumber: '50100412891234',
+        ifscCode: 'HDFC0001234',
+        bankName: 'HDFC Bank'
+      },
+      status: 'active',
+      createdAt: '2026-01-05T00:00:00.000Z',
+      updatedAt: '2026-01-05T00:00:00.000Z'
+    },
+    {
+      id: 'usr_sub_1_alias',
       email: 'subadmin.rahul@platform.com',
-      password: 'subadmin123',
-      passwordHash: bcrypt.hashSync('subadmin123', 10),
+      password: DEFAULT_PASSWORD,
+      passwordHash: defaultHash,
       name: 'Rahul Deshmukh',
       role: 'subadmin',
       createdBy: 'usr_admin',
@@ -189,36 +233,59 @@ const initialData: DatabaseSchema = {
       updatedAt: '2026-01-05T00:00:00.000Z'
     },
     {
-      id: 'usr_sub_2',
-      email: 'subadmin.ananya@platform.com',
-      password: 'subadmin123',
-      passwordHash: bcrypt.hashSync('subadmin123', 10),
-      name: 'Ananya Verma',
+      id: 'usr_sub_1_alias2',
+      email: 'subadmin.rahul@example.com',
+      password: DEFAULT_PASSWORD,
+      passwordHash: defaultHash,
+      name: 'Rahul Deshmukh (Desk)',
       role: 'subadmin',
       createdBy: 'usr_admin',
-      businessName: 'Verma FinTech Clearing Associates',
-      phone: '+91 98110 99882',
-      defaultUpiId: 'ananya.clearing@icici',
+      businessName: 'RD Referral Agency & Settlements',
+      phone: '+91 98201 44521',
+      defaultUpiId: 'rahul.rd@okaxis',
       bankDetails: {
-        accountHolder: 'Ananya Verma Associates',
-        accountNumber: '002901509988',
-        ifscCode: 'ICIC0000029',
-        bankName: 'ICICI Bank'
+        accountHolder: 'Rahul Deshmukh Agency',
+        accountNumber: '50100412891234',
+        ifscCode: 'HDFC0001234',
+        bankName: 'HDFC Bank'
       },
       status: 'active',
-      createdAt: '2026-01-08T00:00:00.000Z',
-      updatedAt: '2026-01-08T00:00:00.000Z'
+      createdAt: '2026-01-05T00:00:00.000Z',
+      updatedAt: '2026-01-05T00:00:00.000Z'
     },
     {
       id: 'usr_merch_1',
-      email: 'merchant.sunil@store.com',
-      password: 'merchant123',
-      passwordHash: bcrypt.hashSync('merchant123', 10),
+      email: 'merchant@platform.com',
+      password: DEFAULT_PASSWORD,
+      passwordHash: defaultHash,
+      name: 'Primary Merchant Store',
+      role: 'merchant',
+      createdBy: 'usr_sub_1',
+      subAdminId: 'usr_sub_1',
+      subAdminName: 'Regional Sub-Admin Desk',
+      businessName: 'Sharma Electronics & Mobile Retail',
+      phone: '+91 99200 44321',
+      defaultUpiId: 'merchant.store@paytm',
+      bankDetails: {
+        accountHolder: 'Sharma Electronics Sole Prop',
+        accountNumber: '112233445566',
+        ifscCode: 'SBIN0001245',
+        bankName: 'State Bank of India'
+      },
+      status: 'active',
+      createdAt: '2026-01-10T00:00:00.000Z',
+      updatedAt: '2026-01-10T00:00:00.000Z'
+    },
+    {
+      id: 'usr_merch_1_alias',
+      email: 'merchant.sunil@example.com',
+      password: DEFAULT_PASSWORD,
+      passwordHash: defaultHash,
       name: 'Sunil Sharma',
       role: 'merchant',
       createdBy: 'usr_sub_1',
       subAdminId: 'usr_sub_1',
-      subAdminName: 'Rahul Deshmukh',
+      subAdminName: 'Regional Sub-Admin Desk',
       businessName: 'Sharma Electronics & Mobile Retail',
       phone: '+91 99200 44321',
       defaultUpiId: 'sunil.sharma@paytm',
@@ -233,50 +300,69 @@ const initialData: DatabaseSchema = {
       updatedAt: '2026-01-10T00:00:00.000Z'
     },
     {
-      id: 'usr_merch_2',
-      email: 'merchant.priya@bazaar.com',
-      password: 'merchant123',
-      passwordHash: bcrypt.hashSync('merchant123', 10),
-      name: 'Priya Mehta',
+      id: 'usr_merch_1_alias2',
+      email: 'merchant.sunil@store.com',
+      password: DEFAULT_PASSWORD,
+      passwordHash: defaultHash,
+      name: 'Sunil Sharma (Store)',
       role: 'merchant',
       createdBy: 'usr_sub_1',
       subAdminId: 'usr_sub_1',
-      subAdminName: 'Rahul Deshmukh',
-      businessName: 'Mehta Supermarket & Provisions',
-      phone: '+91 97200 88991',
-      defaultUpiId: 'priya.mehta@ybl',
+      subAdminName: 'Regional Sub-Admin Desk',
+      businessName: 'Sharma Electronics & Mobile Retail',
+      phone: '+91 99200 44321',
+      defaultUpiId: 'sunil.sharma@paytm',
       bankDetails: {
-        accountHolder: 'Priya Mehta Enterprises',
-        accountNumber: '998877665544',
-        ifscCode: 'KKBK0000452',
-        bankName: 'Kotak Mahindra Bank'
+        accountHolder: 'Sharma Electronics Sole Prop',
+        accountNumber: '112233445566',
+        ifscCode: 'SBIN0001245',
+        bankName: 'State Bank of India'
+      },
+      status: 'active',
+      createdAt: '2026-01-10T00:00:00.000Z',
+      updatedAt: '2026-01-10T00:00:00.000Z'
+    },
+    {
+      id: 'usr_merch_direct',
+      email: 'direct@platform.com',
+      password: DEFAULT_PASSWORD,
+      passwordHash: defaultHash,
+      name: 'Direct Wholesale Merchant',
+      role: 'merchant',
+      createdBy: 'usr_admin',
+      businessName: 'Direct Platform Wholesale & Exports',
+      phone: '+91 98110 55678',
+      defaultUpiId: 'direct.merchant@icici',
+      bankDetails: {
+        accountHolder: 'Direct Platform Wholesale Ltd',
+        accountNumber: '002905001192',
+        ifscCode: 'ICIC0000029',
+        bankName: 'ICICI Bank'
       },
       status: 'active',
       createdAt: '2026-01-12T00:00:00.000Z',
       updatedAt: '2026-01-12T00:00:00.000Z'
     },
     {
-      id: 'usr_merch_3',
-      email: 'merchant.amit@gadgets.com',
-      password: 'merchant123',
-      passwordHash: bcrypt.hashSync('merchant123', 10),
-      name: 'Amit Patel',
+      id: 'usr_merch_direct_alias',
+      email: 'merchant.direct@example.com',
+      password: DEFAULT_PASSWORD,
+      passwordHash: defaultHash,
+      name: 'Rajesh Mehta (Direct)',
       role: 'merchant',
-      createdBy: 'usr_sub_2',
-      subAdminId: 'usr_sub_2',
-      subAdminName: 'Ananya Verma',
-      businessName: 'Patel IT Hardware Hub',
-      phone: '+91 98222 33119',
-      defaultUpiId: 'amit.patel@icici',
+      createdBy: 'usr_admin',
+      businessName: 'Mehta Direct Wholesale Exports',
+      phone: '+91 98110 55678',
+      defaultUpiId: 'mehta.exports@icici',
       bankDetails: {
-        accountHolder: 'Patel IT Solutions',
-        accountNumber: '445566778899',
-        ifscCode: 'UTIB0000189',
-        bankName: 'Axis Bank'
+        accountHolder: 'Mehta Wholesale Exports Ltd',
+        accountNumber: '002905001192',
+        ifscCode: 'ICIC0000029',
+        bankName: 'ICICI Bank'
       },
       status: 'active',
-      createdAt: '2026-01-15T00:00:00.000Z',
-      updatedAt: '2026-01-15T00:00:00.000Z'
+      createdAt: '2026-01-12T00:00:00.000Z',
+      updatedAt: '2026-01-12T00:00:00.000Z'
     }
   ],
   settlements: [
